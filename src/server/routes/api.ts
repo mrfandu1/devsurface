@@ -229,6 +229,10 @@ export function registerApiRoutes(
     return context.json(options.processManager.list());
   });
 
+  app.get('/api/logs', (context) => {
+    return context.json(options.processManager.listLogs());
+  });
+
   app.post('/api/run/:script', async (context) => {
     const script = decodeURIComponent(context.req.param('script'));
     const scan = await scanProject(options.projectRoot);

@@ -28,7 +28,7 @@ function handle(command: Promise<void>): void {
 program
   .name('devsurface')
   .description('Turn any Node.js repository into a local developer control panel.')
-  .version('0.1.0')
+  .version('0.2.0')
   .option('-p, --port <port>', 'dashboard port', toPort, 4567)
   .option('--no-open', 'do not open the browser automatically')
   .action((options: { port: number; open: boolean }) => {

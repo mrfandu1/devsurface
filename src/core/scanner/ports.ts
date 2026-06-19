@@ -2,6 +2,8 @@ import net from 'node:net';
 import type { FrameworkInfo, PortProbe } from '../types.js';
 
 export const DEFAULT_PORTS = [3000, 5173];
+export const MAX_PORT_PROBES = 64;
+export const PORT_PROBE_CONCURRENCY = 16;
 
 function uniquePorts(ports: number[]): number[] {
   return Array.from(
@@ -70,10 +72,27 @@ export async function probePort(port: number): Promise<PortProbe> {
 }
 
 export async function detectPorts(ports: number[]): Promise<PortProbe[] | null> {
-  const normalized = uniquePorts(ports);
+  const normalized = uniquePorts(ports).slice(0, MAX_PORT_PROBES);
   if (normalized.length === 0) {
     return null;
   }
 
-  return await Promise.all(normalized.map((port) => probePort(port)));
+  const results: PortProbe[] = [];
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    while (nextIndex < normalized.length) {
+      const port = normalized[nextIndex];
+      nextIndex += 1;
+      results.push(await probePort(port));
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(PORT_PROBE_CONCURRENCY, normalized.length) }, () => worker())
+  );
+
+  return results.sort(
+    (left, right) => normalized.indexOf(left.port) - normalized.indexOf(right.port)
+  );
 }

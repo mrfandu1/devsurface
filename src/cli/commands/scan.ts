@@ -1,17 +1,18 @@
 import pc from 'picocolors';
 import type { ScanResult } from '../../core/types.js';
 import { scanProject } from '../../core/scanner/index.js';
+import { safeTerminalList, safeTerminalText } from '../terminal.js';
 
 function formatList(values: string[]): string {
-  return values.length > 0 ? values.join(', ') : 'none';
+  return safeTerminalList(values);
 }
 
 export function printScanResult(scan: ScanResult): void {
-  console.log(pc.bold(`Project:   ${scan.projectName}`));
-  console.log(`Type:      ${scan.framework?.type ?? 'Unknown'}`);
-  console.log(`Manager:   ${scan.packageManager ?? 'unknown'}`);
+  console.log(pc.bold(`Project:   ${safeTerminalText(scan.projectName)}`));
+  console.log(`Type:      ${safeTerminalText(scan.framework?.type ?? 'Unknown')}`);
+  console.log(`Manager:   ${safeTerminalText(scan.packageManager ?? 'unknown')}`);
   console.log(`Scripts:   ${formatList(Object.keys(scan.scripts))}`);
-  console.log(`Git:       ${scan.git?.branch ?? 'not detected'}`);
+  console.log(`Git:       ${safeTerminalText(scan.git?.branch ?? 'not detected')}`);
   console.log(`README:    ${scan.readme.exists ? 'found' : 'missing'}`);
   console.log(`LICENSE:   ${scan.license.exists ? 'found' : 'missing'}`);
 

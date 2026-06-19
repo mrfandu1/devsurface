@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { loadConfig, validateConfig } from '../src/core/config/load.js';
+import { MAX_CONFIGURED_PORTS, loadConfig, validateConfig } from '../src/core/config/load.js';
 import { makeTempProject, removeTempProject, writeJson } from './testUtils.js';
 
 const tempProjects: string[] = [];
@@ -55,5 +55,17 @@ describe('config loader', () => {
 
     expect(result.config.ports).toEqual([3000]);
     expect(result.warnings).toContain('ports may only contain integers between 1 and 65535.');
+  });
+
+  it('caps configured ports during validation', () => {
+    const result = validateConfig({
+      ports: Array.from({ length: MAX_CONFIGURED_PORTS + 10 }, (_, index) => index + 1)
+    });
+
+    expect(result.config.ports).toHaveLength(MAX_CONFIGURED_PORTS);
+    expect(result.config.ports).toEqual(
+      Array.from({ length: MAX_CONFIGURED_PORTS }, (_, index) => index + 1)
+    );
+    expect(result.warnings).toContain(`ports may contain at most ${MAX_CONFIGURED_PORTS} entries.`);
   });
 });

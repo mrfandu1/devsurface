@@ -3,6 +3,8 @@ import path from 'node:path';
 import type { ConfigLoadResult, DevSurfaceConfig } from '../types.js';
 import { CONFIG_FILE_NAME } from './defaults.js';
 
+export const MAX_CONFIGURED_PORTS = 32;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -72,7 +74,11 @@ function toPorts(value: unknown, warnings: string[]): number[] | undefined {
     warnings.push('ports may only contain integers between 1 and 65535.');
   }
 
-  return ports;
+  if (ports.length > MAX_CONFIGURED_PORTS) {
+    warnings.push(`ports may contain at most ${MAX_CONFIGURED_PORTS} entries.`);
+  }
+
+  return ports.slice(0, MAX_CONFIGURED_PORTS);
 }
 
 export function validateConfig(raw: unknown): { config: DevSurfaceConfig; warnings: string[] } {

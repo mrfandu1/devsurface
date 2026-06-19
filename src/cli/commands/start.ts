@@ -10,7 +10,7 @@ export async function startCommand(options: {
   openBrowser?: boolean;
 }): Promise<void> {
   const cwd = options.cwd ?? process.cwd();
-  console.log(pc.bold(`DevSurface v0.1.0`));
+  console.log(pc.bold(`DevSurface v0.2.0`));
   console.log('Scanning project...\n');
 
   const scan = await scanProject(cwd);

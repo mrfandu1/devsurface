@@ -7,6 +7,26 @@ interface ProcessRecord extends ManagedProcessSnapshot {
   child: ChildProcess;
 }
 
+function killChildProcessTree(child: ChildProcess): void {
+  if (child.pid === undefined) {
+    child.kill();
+    return;
+  }
+
+  if (process.platform === 'win32') {
+    const result = spawn.sync('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
+      stdio: 'ignore',
+      windowsHide: true
+    });
+    if (result.error) {
+      child.kill();
+    }
+    return;
+  }
+
+  child.kill();
+}
+
 export class ProcessManager extends EventEmitter {
   private readonly processes = new Map<string, ProcessRecord>();
   private readonly logs: ProcessLogEvent[] = [];
@@ -80,7 +100,7 @@ export class ProcessManager extends EventEmitter {
 
     record.status = 'stopped';
     record.endedAt = new Date().toISOString();
-    record.child.kill();
+    killChildProcessTree(record.child);
     this.emitSystem(record, 'Stopped by DevSurface');
     this.emit('process', this.snapshot(record));
     return true;
@@ -99,7 +119,7 @@ export class ProcessManager extends EventEmitter {
       if (record.status === 'running') {
         record.status = 'stopped';
         record.endedAt = new Date().toISOString();
-        record.child.kill();
+        killChildProcessTree(record.child);
       }
     }
   }

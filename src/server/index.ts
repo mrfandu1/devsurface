@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs';
 import type { Server } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { serve } from '@hono/node-server';
+import { createAdaptorServer } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
 import open from 'open';
@@ -52,6 +52,88 @@ async function findWebDistDir(): Promise<string | null> {
   return null;
 }
 
+function toListenError(error: unknown, port: number): Error {
+  const code = error instanceof Error ? (error as NodeJS.ErrnoException).code : undefined;
+
+  if (code === 'EADDRINUSE') {
+    return new Error(
+      `Port ${port} is already in use on ${HOST}. Stop the other process or run DevSurface with --port ${port + 1}.`,
+      { cause: error }
+    );
+  }
+
+  if (code === 'EACCES') {
+    return new Error(`DevSurface does not have permission to bind to ${HOST}:${port}.`, {
+      cause: error
+    });
+  }
+
+  return error instanceof Error ? error : new Error(String(error));
+}
+
+async function listenOnLocalHost(
+  server: Server,
+  wss: ReturnType<typeof setupWebSocket>,
+  port: number
+): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    let settled = false;
+
+    const cleanup = () => {
+      server.off('error', onError);
+      server.off('listening', onListening);
+      wss.off('error', onError);
+    };
+
+    const onError = (error: unknown) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      cleanup();
+      reject(toListenError(error, port));
+    };
+
+    const onListening = () => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      cleanup();
+      resolve();
+    };
+
+    wss.once('error', onError);
+    server.once('error', onError);
+    server.once('listening', onListening);
+    server.listen(port, HOST);
+  });
+}
+
+async function closeWebSocketServer(wss: ReturnType<typeof setupWebSocket>): Promise<void> {
+  await new Promise<void>((resolve) => {
+    wss.close(() => resolve());
+  });
+}
+
+async function closeHttpServer(server: Server): Promise<void> {
+  if (!server.listening) {
+    return;
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => {
+      if (error) {
+        reject(error);
+      } else {
+        resolve();
+      }
+    });
+  });
+}
+
 export async function createApp(options: {
   projectRoot: string;
   processManager: ProcessManager;
@@ -93,12 +175,14 @@ export async function startDevSurfaceServer(options: {
     processManager
   });
 
-  const server = serve({
+  const server = createAdaptorServer({
     fetch: app.fetch,
-    port,
     hostname: HOST
   }) as Server;
   const wss = setupWebSocket(server, processManager);
+  await listenOnLocalHost(server, wss, port);
+  processManager.attachCleanupHandlers();
+
   const url = `http://${HOST}:${port}`;
 
   if (options.openBrowser !== false) {
@@ -111,18 +195,8 @@ export async function startDevSurfaceServer(options: {
     processManager,
     close: async () => {
       processManager.killAll();
-      await new Promise<void>((resolve) => {
-        wss.close(() => resolve());
-      });
-      await new Promise<void>((resolve, reject) => {
-        server.close((error) => {
-          if (error) {
-            reject(error);
-          } else {
-            resolve();
-          }
-        });
-      });
+      await closeWebSocketServer(wss);
+      await closeHttpServer(server);
     }
   };
 }

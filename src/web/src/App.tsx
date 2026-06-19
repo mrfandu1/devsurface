@@ -1,9 +1,16 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  appUrlForPort,
+  candidatePortsForScript,
+  chooseAutoOpenPort,
+  scriptLooksLikeServer
+} from './autoOpen';
 import { useProject } from './hooks/useProject';
 import { useSocket } from './hooks/useSocket';
+import { getDashboardShortcut, type DashboardShortcutView } from './keyboardShortcuts';
 import type { DoctorWarning, ManagedProcessSnapshot, ProcessLogEvent, ScanResult } from './types';
 
-const DEV_SURFACE_VERSION = '0.1.0';
+const DEV_SURFACE_VERSION = '0.2.0';
 
 function mergeProcesses(
   polledProcesses: ManagedProcessSnapshot[],
@@ -18,6 +25,27 @@ function mergeProcesses(
   }
 
   return Array.from(processMap.values()).sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+}
+
+function logEventKey(log: ProcessLogEvent): string {
+  return `${log.timestamp}\n${log.pid}\n${log.stream}\n${log.message}`;
+}
+
+function mergeLogs(
+  polledLogs: ProcessLogEvent[],
+  socketLogs: ProcessLogEvent[]
+): ProcessLogEvent[] {
+  const logMap = new Map<string, ProcessLogEvent>();
+  for (const log of polledLogs) {
+    logMap.set(logEventKey(log), log);
+  }
+  for (const log of socketLogs) {
+    logMap.set(logEventKey(log), log);
+  }
+
+  return Array.from(logMap.values())
+    .sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+    .slice(-500);
 }
 
 function formatPath(filePath: string): string {
@@ -56,7 +84,11 @@ function displayProcessStatus(processInfo: ManagedProcessSnapshot | null): strin
   }
 
   if (processInfo.status === 'exited') {
-    return processInfo.exitCode === 0 ? 'completed' : 'failed';
+    return processInfo.exitCode === 0 ? 'completed (0)' : `failed (${processInfo.exitCode ?? '?'})`;
+  }
+
+  if (processInfo.status === 'failed') {
+    return `failed (${processInfo.exitCode ?? '?'})`;
   }
 
   return processInfo.status;
@@ -122,19 +154,121 @@ type DrawerKind =
   | null;
 
 interface DashboardSettings {
+  autoRefreshEnabled: boolean;
   autoRefreshSeconds: number;
+  autoOpenAppUrl: boolean;
   confirmBeforeRun: boolean;
 }
 
-type ActiveView =
-  | 'overview'
-  | 'scripts'
-  | 'environment'
-  | 'ports'
-  | 'services'
-  | 'health'
-  | 'logs'
-  | 'settings';
+const DEFAULT_DASHBOARD_SETTINGS: DashboardSettings = {
+  autoRefreshEnabled: true,
+  autoRefreshSeconds: 30,
+  autoOpenAppUrl: true,
+  confirmBeforeRun: true
+};
+
+type ActiveView = DashboardShortcutView;
+
+const AUTO_OPEN_ATTEMPTS = 40;
+const AUTO_OPEN_INTERVAL_MS = 500;
+const APP_URL_PROBE_TIMEOUT_MS = 1_500;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+function closePendingAppWindow(appWindow: Window | null): void {
+  if (appWindow !== null && !appWindow.closed) {
+    appWindow.close();
+  }
+}
+
+function createPendingAppWindow(): Window | null {
+  try {
+    const appWindow = window.open('', '_blank');
+    if (appWindow !== null) {
+      appWindow.document.title = 'Starting local app';
+      appWindow.document.body.innerHTML =
+        '<main style="font: 14px system-ui; padding: 24px;">Starting local app...</main>';
+    }
+    return appWindow;
+  } catch {
+    return null;
+  }
+}
+
+function openDetectedAppUrl(url: string, appWindow: Window | null): void {
+  if (appWindow !== null && !appWindow.closed) {
+    appWindow.location.href = url;
+    appWindow.focus();
+    return;
+  }
+
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+async function fetchProjectSnapshot(): Promise<ScanResult | null> {
+  try {
+    const response = await fetch('/api/project');
+    return response.ok ? ((await response.json()) as ScanResult) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function localAppResponds(url: string): Promise<boolean> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), APP_URL_PROBE_TIMEOUT_MS);
+  try {
+    await fetch(url, {
+      cache: 'no-store',
+      mode: 'no-cors',
+      signal: controller.signal
+    });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+async function waitForAutoOpenUrl({
+  previousPorts,
+  candidatePorts,
+  appWindow,
+  onRefresh
+}: {
+  previousPorts: ScanResult['ports'];
+  candidatePorts: number[];
+  appWindow: Window | null;
+  onRefresh: () => Promise<void>;
+}): Promise<void> {
+  for (let attempt = 0; attempt < AUTO_OPEN_ATTEMPTS; attempt += 1) {
+    await delay(AUTO_OPEN_INTERVAL_MS);
+
+    const nextProject = await fetchProjectSnapshot();
+    if (nextProject === null) {
+      continue;
+    }
+
+    const port = chooseAutoOpenPort(previousPorts, nextProject.ports, candidatePorts);
+    if (port === null) {
+      continue;
+    }
+
+    const url = appUrlForPort(port);
+    if (await localAppResponds(url)) {
+      openDetectedAppUrl(url, appWindow);
+      await onRefresh();
+      return;
+    }
+  }
+
+  closePendingAppWindow(appWindow);
+}
 
 function Icon({ name }: { name: string }) {
   return (
@@ -903,6 +1037,97 @@ function CommandBlock({ command }: { command: string }) {
   );
 }
 
+function AutoOpenUrlToggle({
+  settings,
+  onSettingsChange,
+  compact = false
+}: {
+  settings: DashboardSettings;
+  onSettingsChange: (settings: DashboardSettings) => void;
+  compact?: boolean;
+}) {
+  return (
+    <label className={`checkbox-control ${compact ? 'compact' : ''}`}>
+      <input
+        checked={settings.autoOpenAppUrl}
+        onChange={(event) =>
+          onSettingsChange({ ...settings, autoOpenAppUrl: event.target.checked })
+        }
+        type="checkbox"
+      />
+      <span>Auto-open URL</span>
+    </label>
+  );
+}
+
+function DashboardSettingsFields({
+  settings,
+  onSettingsChange
+}: {
+  settings: DashboardSettings;
+  onSettingsChange: (settings: DashboardSettings) => void;
+}) {
+  return (
+    <>
+      <label className="setting-row">
+        <span>
+          <strong>Auto refresh</strong>
+          <em>Refresh scan data on a timer.</em>
+        </span>
+        <span className="setting-control-group">
+          <input
+            checked={settings.autoRefreshEnabled}
+            onChange={(event) =>
+              onSettingsChange({ ...settings, autoRefreshEnabled: event.target.checked })
+            }
+            type="checkbox"
+          />
+          <select
+            disabled={!settings.autoRefreshEnabled}
+            value={settings.autoRefreshSeconds}
+            onChange={(event) =>
+              onSettingsChange({
+                ...settings,
+                autoRefreshSeconds: Number(event.target.value)
+              })
+            }
+          >
+            <option value={10}>10 sec</option>
+            <option value={30}>30 sec</option>
+            <option value={60}>60 sec</option>
+          </select>
+        </span>
+      </label>
+      <label className="setting-row">
+        <span>
+          <strong>Auto-open app URL</strong>
+          <em>Open a local app tab after server-like scripts start.</em>
+        </span>
+        <input
+          checked={settings.autoOpenAppUrl}
+          onChange={(event) =>
+            onSettingsChange({ ...settings, autoOpenAppUrl: event.target.checked })
+          }
+          type="checkbox"
+        />
+      </label>
+      <label className="setting-row">
+        <span>
+          <strong>Confirm script runs</strong>
+          <em>Ask before executing package scripts.</em>
+        </span>
+        <input
+          checked={settings.confirmBeforeRun}
+          onChange={(event) =>
+            onSettingsChange({ ...settings, confirmBeforeRun: event.target.checked })
+          }
+          type="checkbox"
+        />
+      </label>
+    </>
+  );
+}
+
 function LogConsole({ logs, limit = 220 }: { logs: ProcessLogEvent[]; limit?: number }) {
   const visibleLogs = logs.slice(-limit);
 
@@ -1075,39 +1300,7 @@ function DetailDrawer({
         {drawer === 'settings' ? (
           <div className="drawer-content">
             <DrawerSection title="Dashboard">
-              <label className="setting-row">
-                <span>
-                  <strong>Auto refresh</strong>
-                  <em>Refresh scan data on a timer.</em>
-                </span>
-                <select
-                  value={settings.autoRefreshSeconds}
-                  onChange={(event) =>
-                    onSettingsChange({
-                      ...settings,
-                      autoRefreshSeconds: Number(event.target.value)
-                    })
-                  }
-                >
-                  <option value={0}>Off</option>
-                  <option value={10}>10 sec</option>
-                  <option value={30}>30 sec</option>
-                  <option value={60}>60 sec</option>
-                </select>
-              </label>
-              <label className="setting-row">
-                <span>
-                  <strong>Confirm script runs</strong>
-                  <em>Ask before executing package scripts.</em>
-                </span>
-                <input
-                  checked={settings.confirmBeforeRun}
-                  onChange={(event) =>
-                    onSettingsChange({ ...settings, confirmBeforeRun: event.target.checked })
-                  }
-                  type="checkbox"
-                />
-              </label>
+              <DashboardSettingsFields settings={settings} onSettingsChange={onSettingsChange} />
             </DrawerSection>
             <DrawerSection title="Workspace">
               <CommandBlock command={terminalCommand} />
@@ -1118,6 +1311,9 @@ function DetailDrawer({
 
         {drawer === 'scripts' ? (
           <div className="drawer-content">
+            <div className="drawer-toolbar">
+              <AutoOpenUrlToggle compact settings={settings} onSettingsChange={onSettingsChange} />
+            </div>
             <DrawerSection title="All Package Scripts">
               <div className="drawer-table script-drawer-table">
                 {Object.entries(project.scripts).map(([script, command]) => {
@@ -1370,12 +1566,21 @@ function SectionPage({
           <span className="drawer-kicker">DevSurface</span>
           <h1>{titleMap[view]}</h1>
         </div>
-        {view !== 'settings' ? (
-          <button className="utility-button compact" onClick={() => void onRefresh()} type="button">
-            <Icon name="refresh" />
-            Refresh Data
-          </button>
-        ) : null}
+        <div className="section-header-actions">
+          {view === 'scripts' ? (
+            <AutoOpenUrlToggle compact settings={settings} onSettingsChange={onSettingsChange} />
+          ) : null}
+          {view !== 'settings' ? (
+            <button
+              className="utility-button compact"
+              onClick={() => void onRefresh()}
+              type="button"
+            >
+              <Icon name="refresh" />
+              Refresh Data
+            </button>
+          ) : null}
+        </div>
       </header>
 
       {view === 'scripts' ? (
@@ -1533,39 +1738,7 @@ function SectionPage({
       {view === 'settings' ? (
         <div className="section-grid">
           <DrawerSection title="Dashboard">
-            <label className="setting-row">
-              <span>
-                <strong>Auto refresh</strong>
-                <em>Refresh scan data on a timer.</em>
-              </span>
-              <select
-                value={settings.autoRefreshSeconds}
-                onChange={(event) =>
-                  onSettingsChange({
-                    ...settings,
-                    autoRefreshSeconds: Number(event.target.value)
-                  })
-                }
-              >
-                <option value={0}>Off</option>
-                <option value={10}>10 sec</option>
-                <option value={30}>30 sec</option>
-                <option value={60}>60 sec</option>
-              </select>
-            </label>
-            <label className="setting-row">
-              <span>
-                <strong>Confirm script runs</strong>
-                <em>Ask before executing package scripts.</em>
-              </span>
-              <input
-                checked={settings.confirmBeforeRun}
-                onChange={(event) =>
-                  onSettingsChange({ ...settings, confirmBeforeRun: event.target.checked })
-                }
-                type="checkbox"
-              />
-            </label>
+            <DashboardSettingsFields settings={settings} onSettingsChange={onSettingsChange} />
           </DrawerSection>
           <DrawerSection title="Workspace">
             <CommandBlock command={`Set-Location '${project.root}'`} />
@@ -1585,32 +1758,56 @@ export default function App() {
   const [activeView, setActiveView] = useState<ActiveView>('overview');
   const [drawer, setDrawer] = useState<DrawerKind>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [settings, setSettings] = useState<DashboardSettings>({
-    autoRefreshSeconds: 0,
-    confirmBeforeRun: true
-  });
+  const [settings, setSettings] = useState<DashboardSettings>(() => ({
+    ...DEFAULT_DASHBOARD_SETTINGS
+  }));
   const processes = useMemo(
     () => mergeProcesses(projectState.processes, socket.processes),
     [projectState.processes, socket.processes]
   );
+  const logs = useMemo(
+    () => mergeLogs(projectState.logs, socket.logs),
+    [projectState.logs, socket.logs]
+  );
+  const projectLoaded = projectState.project !== null;
 
   useEffect(() => {
-    if (drawer === null) {
-      return undefined;
-    }
+    function handleShortcut(event: KeyboardEvent): void {
+      const action = getDashboardShortcut(event);
+      if (action === null) {
+        return;
+      }
 
-    function closeOnEscape(event: KeyboardEvent): void {
-      if (event.key === 'Escape') {
+      event.preventDefault();
+
+      if (action.type === 'closeDrawer') {
         setDrawer(null);
+        return;
+      }
+
+      if (action.type === 'refresh') {
+        void refreshProject();
+        return;
+      }
+
+      if (action.type === 'toggleSidebar') {
+        setSidebarCollapsed((current) => !current);
+        return;
+      }
+
+      setActiveView(action.view);
+      setDrawer(null);
+      if (action.view === 'overview') {
+        document.getElementById('overview')?.scrollIntoView({ behavior: 'smooth' });
       }
     }
 
-    window.addEventListener('keydown', closeOnEscape);
-    return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [drawer]);
+    window.addEventListener('keydown', handleShortcut);
+    return () => window.removeEventListener('keydown', handleShortcut);
+  }, []);
 
   useEffect(() => {
-    if (settings.autoRefreshSeconds <= 0 || projectState.project === null) {
+    if (!settings.autoRefreshEnabled || settings.autoRefreshSeconds <= 0 || !projectLoaded) {
       return undefined;
     }
 
@@ -1619,7 +1816,7 @@ export default function App() {
     }, settings.autoRefreshSeconds * 1000);
 
     return () => window.clearInterval(interval);
-  }, [projectState.project, settings.autoRefreshSeconds]);
+  }, [projectLoaded, settings.autoRefreshEnabled, settings.autoRefreshSeconds]);
 
   async function refreshProject(): Promise<void> {
     await projectState.refresh();
@@ -1679,9 +1876,11 @@ export default function App() {
   }
 
   async function runScript(script: string): Promise<void> {
-    if (settings.confirmBeforeRun && projectState.project !== null) {
-      const exactCommand = `${projectState.project.packageManager ?? 'npm'} run ${script}`;
-      const packageScript = projectState.project.scripts[script];
+    const project = projectState.project;
+    const packageScript = project?.scripts[script] ?? '';
+
+    if (settings.confirmBeforeRun && project !== null) {
+      const exactCommand = `${project.packageManager ?? 'npm'} run ${script}`;
       const confirmed = window.confirm(
         `Run this command?\n\n${exactCommand}\n\npackage.json script:\n${packageScript}`
       );
@@ -1690,16 +1889,36 @@ export default function App() {
       }
     }
 
-    const response = await fetch(`/api/run/${encodeURIComponent(script)}`, {
-      method: 'POST',
-      headers: {
-        'X-DevSurface-Intent': 'dashboard'
+    const shouldAutoOpen =
+      project !== null && settings.autoOpenAppUrl && scriptLooksLikeServer(script, packageScript);
+    const pendingAppWindow = shouldAutoOpen ? createPendingAppWindow() : null;
+
+    try {
+      const response = await fetch(`/api/run/${encodeURIComponent(script)}`, {
+        method: 'POST',
+        headers: {
+          'X-DevSurface-Intent': 'dashboard'
+        }
+      });
+      if (!response.ok) {
+        closePendingAppWindow(pendingAppWindow);
+        throw new Error(`Unable to start ${script}`);
       }
-    });
-    if (!response.ok) {
-      throw new Error(`Unable to start ${script}`);
+    } catch (error) {
+      closePendingAppWindow(pendingAppWindow);
+      throw error;
     }
+
     await refreshProject();
+
+    if (shouldAutoOpen && project !== null) {
+      void waitForAutoOpenUrl({
+        previousPorts: project.ports,
+        candidatePorts: candidatePortsForScript(project, script),
+        appWindow: pendingAppWindow,
+        onRefresh: refreshProject
+      }).catch(() => closePendingAppWindow(pendingAppWindow));
+    }
   }
 
   async function runConfiguredCommand(name: string, command: string): Promise<void> {
@@ -1854,7 +2073,7 @@ export default function App() {
                 />
                 <LogsInspector
                   connection={socket.connection}
-                  logs={socket.logs}
+                  logs={logs}
                   onOpenLogs={() => setDrawer('logs')}
                 />
               </aside>
@@ -1864,7 +2083,7 @@ export default function App() {
               view={activeView}
               project={projectState.project}
               warnings={projectState.health}
-              logs={socket.logs}
+              logs={logs}
               processes={processes}
               settings={settings}
               lastRefreshed={lastRefreshed}
@@ -1881,7 +2100,7 @@ export default function App() {
         drawer={drawer}
         project={projectState.project}
         warnings={projectState.health}
-        logs={socket.logs}
+        logs={logs}
         processes={processes}
         settings={settings}
         lastRefreshed={lastRefreshed}

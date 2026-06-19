@@ -440,6 +440,14 @@ kbd {
   font-size: 25px;
 }
 
+.section-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .section-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(340px, 0.42fr);
@@ -1082,6 +1090,11 @@ h2 {
   padding: 18px;
 }
 
+.drawer-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .drawer-section {
   display: grid;
   gap: 11px;
@@ -1284,10 +1297,40 @@ h2 {
   padding: 0 8px;
 }
 
-.setting-row input[type='checkbox'] {
+.setting-row select:disabled {
+  opacity: 0.58;
+}
+
+.setting-row input[type='checkbox'],
+.checkbox-control input[type='checkbox'] {
   width: 18px;
   height: 18px;
   accent-color: #08751f;
+}
+
+.setting-control-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.checkbox-control {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid #bdbdb6;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.62);
+  padding: 0 11px;
+  color: #111111;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.checkbox-control.compact {
+  min-height: 34px;
 }
 
 .drawer-list {
@@ -1650,6 +1693,10 @@ h2 {
     flex-direction: column;
   }
 
+  .section-header-actions {
+    justify-content: flex-start;
+  }
+
   .overview-matrix {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1736,9 +1783,18 @@ h2 {
   .log-process-row summary,
   .log-console-line,
   .configured-command-row,
+  .script-drawer-table .drawer-row,
   .three-col .drawer-row,
   .two-col .drawer-row {
     grid-template-columns: 1fr;
+  }
+
+  .setting-row {
+    grid-template-columns: 1fr;
+  }
+
+  .setting-control-group {
+    justify-self: start;
   }
 
   .log-process-row summary > code,

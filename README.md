@@ -1,8 +1,34 @@
-# DevSurface
+<!-- markdownlint-disable MD033 MD041 -->
 
-[![DevSurface ready](docs/devsurface-badge.svg)](https://github.com/mrfandu1/devsurface)
+<a id="readme-top"></a>
 
-Turn any Node.js repository into a local developer control panel.
+<div align="center">
+
+<h1>DevSurface</h1>
+
+<p><strong>Turn any Node.js repository into a local developer control panel.</strong></p>
+
+<p>
+  <a href="#quick-start">Quick Start</a>
+  &nbsp;&middot;&nbsp;
+  <a href="#commands">Commands</a>
+  &nbsp;&middot;&nbsp;
+  <a href="#dashboard">Dashboard</a>
+  &nbsp;&middot;&nbsp;
+  <a href="https://github.com/mrfandu1/devsurface/issues">Report an issue</a>
+</p>
+
+<p>
+  <a href="https://github.com/mrfandu1/devsurface">
+    <img alt="DevSurface ready" src="docs/devsurface-badge.svg">
+  </a>
+  <a href="LICENSE">
+    <img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-informational">
+  </a>
+  <img alt="Built with TypeScript" src="https://img.shields.io/badge/Built%20with-TypeScript-3178c6">
+</p>
+
+</div>
 
 DevSurface scans a project, starts a local dashboard, and shows the things contributors
 usually need before a project will run: package scripts, environment files, ports,
@@ -12,6 +38,12 @@ No config file is required.
 
 ```bash
 npx devsurface
+```
+
+With Bun:
+
+```bash
+bunx devsurface
 ```
 
 ![DevSurface demo](docs/devsurface-demo.gif)
@@ -52,6 +84,13 @@ cd my-node-project
 npx devsurface
 ```
 
+Or, if you use Bun:
+
+```bash
+cd my-node-project
+bunx devsurface
+```
+
 The dashboard opens at:
 
 ```text
@@ -62,6 +101,13 @@ If a browser does not open automatically, copy the printed dashboard URL from th
 terminal.
 
 ## Commands
+
+Run DevSurface without installing it globally:
+
+| Runtime | Command           |
+| ------- | ----------------- |
+| npm     | `npx devsurface`  |
+| Bun     | `bunx devsurface` |
 
 | Command                   | Description                                                          |
 | ------------------------- | -------------------------------------------------------------------- |
@@ -205,18 +251,21 @@ npm test
 npm run build
 ```
 
-## Publishing
+## Contributing
 
-The npm package is allowlisted through `package.json#files`. The package includes the
-built CLI, built web UI, README, demo GIF, license, and changelog. Private notes,
-tests, examples, and development-only files are excluded from npm publishes.
-
-Check package contents before publishing:
-
-```bash
-npm pack --dry-run
-```
+Contributions of every kind are welcome: code, documentation, bug reports,
+examples, and reviews. Start with [CONTRIBUTING.md](CONTRIBUTING.md) for the
+development workflow.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+DevSurface is released under the MIT License. See [LICENSE](LICENSE) for the full
+text. Copyright (c) 2026 DevSurface contributors.
+
+## Contact and community
+
+- GitHub Issues: report bugs and request features through
+  [GitHub Issues](https://github.com/mrfandu1/devsurface/issues).
+- Security: report vulnerabilities through [SECURITY.md](SECURITY.md).
+
+[(back to top)](#readme-top)

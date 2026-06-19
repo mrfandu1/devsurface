@@ -77,6 +77,23 @@ describe('process runner', () => {
     ).toContain('devsurface-ok');
   });
 
+  it('stops a running managed process', async () => {
+    const manager = new ProcessManager();
+    const processInfo = manager.start({
+      cwd: process.cwd(),
+      script: 'long-running',
+      command: process.execPath,
+      args: ['-e', 'setTimeout(() => undefined, 30000)'],
+      displayCommand: 'node long-running'
+    });
+
+    expect(manager.stop(processInfo.pid)).toBe(true);
+    expect(manager.list()[0]).toMatchObject({
+      pid: processInfo.pid,
+      status: 'stopped'
+    });
+  });
+
   if (process.platform === 'win32') {
     it('does not execute a repo-local package-manager shim', async () => {
       const root = await makeTempProject();

@@ -8,7 +8,7 @@ import { detectGit } from '../src/core/scanner/git.js';
 import { detectDocker } from '../src/core/scanner/docker.js';
 import { detectPackageManager } from '../src/core/scanner/packageManager.js';
 import { readPackageJson } from '../src/core/scanner/packageJson.js';
-import { detectPorts, inferPortsFromScripts } from '../src/core/scanner/ports.js';
+import { MAX_PORT_PROBES, detectPorts, inferPortsFromScripts } from '../src/core/scanner/ports.js';
 import { scanProject } from '../src/core/scanner/index.js';
 import { makeTempProject, mkdirp, removeTempProject, writeJson } from './testUtils.js';
 
@@ -39,6 +39,21 @@ describe('scanner', () => {
     const packageJson = await readPackageJson(root);
     expect(packageJson?.data.name).toBe('demo');
     expect(packageJson?.data.scripts?.dev).toBe('vite --port 4444');
+  });
+
+  it('ignores package.json symlinks that resolve outside the project root', async () => {
+    const root = await tempProject();
+    const outside = await tempProject();
+    const outsidePackage = path.join(outside, 'package.json');
+    await writeJson(outsidePackage, {
+      name: 'outside-package',
+      token: 'hidden'
+    });
+    await fs.symlink(outsidePackage, path.join(root, 'package.json'), 'file');
+
+    expect(await readPackageJson(root)).toBeNull();
+    const scan = await scanProject(root);
+    expect(JSON.stringify(scan)).not.toContain('hidden');
   });
 
   it('detects package manager by lock file priority', async () => {
@@ -242,6 +257,15 @@ describe('scanner', () => {
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
+  });
+
+  it('limits the number of probed ports', async () => {
+    const ports = Array.from({ length: MAX_PORT_PROBES + 20 }, (_, index) => 30000 + index);
+
+    const probes = await detectPorts(ports);
+
+    expect(probes).toHaveLength(MAX_PORT_PROBES);
+    expect(probes?.map((probe) => probe.port)).toEqual(ports.slice(0, MAX_PORT_PROBES));
   });
 
   it('orchestrates a project scan', async () => {

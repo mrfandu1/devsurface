@@ -1,6 +1,6 @@
 {
   "name": "devsurface",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Turn any Node.js repository into a local developer control panel.",
   "type": "module",
   "license": "MIT",
@@ -23,6 +23,7 @@
     "docs/devsurface-demo.gif",
     "README.md",
     "LICENSE",
+    "SECURITY.md",
     "CHANGELOG.md"
   ],
   "scripts": {

@@ -197,6 +197,46 @@ describe('api routes', () => {
     ).toContain('configured-ok');
   });
 
+  it('returns retained process logs over the API', async () => {
+    const root = await tempProject();
+    await writeJson(path.join(root, 'package.json'), {
+      name: 'log-history-demo',
+      scripts: {}
+    });
+    const processManager = new ProcessManager();
+    const app = await createTestAppWithManager(root, processManager);
+
+    const finalStatePromise = new Promise<void>((resolve) => {
+      processManager.on('process', (event) => {
+        if (event.script === 'history' && event.status !== 'running') {
+          resolve();
+        }
+      });
+    });
+
+    processManager.start({
+      cwd: root,
+      script: 'history',
+      command: process.execPath,
+      args: ['-e', 'console.log("retained-log")'],
+      displayCommand: 'node history'
+    });
+    await finalStatePromise;
+
+    const response = await app.request('http://127.0.0.1:4567/api/logs');
+    const logs = (await response.json()) as Array<{ message: string; script: string }>;
+
+    expect(response.status).toBe(200);
+    expect(logs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          script: 'history',
+          message: expect.stringContaining('retained-log')
+        })
+      ])
+    );
+  });
+
   it('rejects env copy sources that resolve outside the project root', async () => {
     const root = await tempProject();
     const outside = await tempProject();

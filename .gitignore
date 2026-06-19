@@ -14,7 +14,6 @@ coverage/
 # Local-only planning and private security notes
 devsurface_PLAN.md
 *_PLAN.md
-SECURITY.md
 security/
 security-notes/
 audit/
