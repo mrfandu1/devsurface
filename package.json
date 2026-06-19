@@ -1,0 +1,75 @@
+{
+  "name": "devsurface",
+  "version": "0.1.0",
+  "description": "Turn any Node.js repository into a local developer control panel.",
+  "type": "module",
+  "license": "MIT",
+  "author": "mrfandu1",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mrfandu1/devsurface.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mrfandu1/devsurface/issues"
+  },
+  "homepage": "https://github.com/mrfandu1/devsurface#readme",
+  "bin": {
+    "devsurface": "./dist/cli/index.js"
+  },
+  "files": [
+    "dist",
+    "src/web/dist",
+    "docs/devsurface-badge.svg",
+    "docs/devsurface-demo.gif",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "npm run build:web && npm run build:cli",
+    "build:cli": "tsup src/cli/index.ts --format esm --dts --sourcemap --clean --out-dir dist/cli",
+    "build:web": "vite build",
+    "dev": "tsx src/cli/index.ts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint . --ext .ts,.tsx",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.8",
+    "commander": "^12.1.0",
+    "cross-spawn": "^7.0.6",
+    "hono": "^4.6.16",
+    "open": "^10.1.0",
+    "picocolors": "^1.1.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "ws": "^8.18.0",
+    "yaml": "^2.6.1"
+  },
+  "devDependencies": {
+    "@types/cross-spawn": "^6.0.6",
+    "@types/node": "^22.10.5",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@types/ws": "^8.5.13",
+    "@vitejs/plugin-react": "^6.0.2",
+    "@typescript-eslint/eslint-plugin": "^8.19.1",
+    "@typescript-eslint/parser": "^8.19.1",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.4.2",
+    "tsup": "^8.5.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vite": "^8.0.16",
+    "vitest": "^4.1.9"
+  },
+  "overrides": {
+    "esbuild": "^0.28.1"
+  },
+  "engines": {
+    "node": ">=18.18"
+  }
+}

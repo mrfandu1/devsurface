@@ -1,0 +1,18 @@
+{
+  "name": "nextjs-app-example",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "test": "node -e \"console.log('tests passed')\"",
+    "lint": "next lint",
+    "db:migrate": "node -e \"console.log('migrate')\"",
+    "db:seed": "node -e \"console.log('seed')\""
+  },
+  "dependencies": {
+    "next": "^15.1.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}

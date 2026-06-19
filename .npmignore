@@ -1,0 +1,14 @@
+# Defensive backup for npm publish. package.json "files" is the main allowlist.
+devsurface_PLAN.md
+*_PLAN.md
+SECURITY.md
+AGENTS.md
+security/
+security-notes/
+audit/
+threat-model/
+tests/
+examples/
+.github/
+.env
+.env.*
