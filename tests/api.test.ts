@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ProcessManager } from '../src/core/process/manager.js';
+import type { DockerController } from '../src/core/docker/compose.js';
 import { createApp } from '../src/server/index.js';
 import { makeTempProject, removeTempProject, writeJson } from './testUtils.js';
 
@@ -31,7 +32,65 @@ async function createTestAppWithManager(root: string, processManager: ProcessMan
   });
 }
 
+async function createTestAppWithDocker(root: string, dockerController: DockerController) {
+  return await createApp({
+    projectRoot: root,
+    processManager: new ProcessManager(),
+    dockerController
+  });
+}
+
+async function mutationHeaders(app: Awaited<ReturnType<typeof createTestApp>>) {
+  const session = await app.request('http://127.0.0.1:4567/api/session');
+  expect(session.status).toBe(200);
+  const body = (await session.json()) as { token: string };
+  return {
+    'X-DevSurface-Intent': 'dashboard',
+    'X-DevSurface-Token': body.token
+  };
+}
+
 describe('api routes', () => {
+  it('starts, stops, and reads logs for Docker Compose services', async () => {
+    const root = await tempProject();
+    const actions: string[] = [];
+    const dockerController: DockerController = {
+      inspect: async () => null,
+      start: async (service) => {
+        actions.push(`start:${service}`);
+        return { service, action: 'start', output: 'started' };
+      },
+      stop: async (service) => {
+        actions.push(`stop:${service}`);
+        return { service, action: 'stop', output: 'stopped' };
+      },
+      logs: async (service) => {
+        actions.push(`logs:${service}`);
+        return { service, logs: 'postgres ready' };
+      }
+    };
+    const app = await createTestAppWithDocker(root, dockerController);
+    const headers = await mutationHeaders(app);
+
+    const startResponse = await app.request('http://127.0.0.1:4567/api/docker/postgres/start', {
+      method: 'POST',
+      headers
+    });
+    const stopResponse = await app.request('http://127.0.0.1:4567/api/docker/postgres/stop', {
+      method: 'POST',
+      headers
+    });
+    const logsResponse = await app.request('http://127.0.0.1:4567/api/docker/postgres/logs');
+
+    expect(startResponse.status).toBe(200);
+    expect(stopResponse.status).toBe(200);
+    expect(await logsResponse.json()).toEqual({
+      service: 'postgres',
+      logs: 'postgres ready'
+    });
+    expect(actions).toEqual(['start:postgres', 'stop:postgres', 'logs:postgres']);
+  });
+
   it('copies .env.example to .env without exposing values', async () => {
     const root = await tempProject();
     await writeJson(path.join(root, 'package.json'), {
@@ -43,9 +102,7 @@ describe('api routes', () => {
 
     const response = await app.request('http://127.0.0.1:4567/api/env/copy', {
       method: 'POST',
-      headers: {
-        'X-DevSurface-Intent': 'dashboard'
-      }
+      headers: await mutationHeaders(app)
     });
 
     expect(response.status).toBe(200);
@@ -70,9 +127,7 @@ describe('api routes', () => {
 
     const response = await app.request('http://127.0.0.1:4567/api/env/copy', {
       method: 'POST',
-      headers: {
-        'X-DevSurface-Intent': 'dashboard'
-      }
+      headers: await mutationHeaders(app)
     });
 
     expect(response.status).toBe(409);
@@ -182,9 +237,7 @@ describe('api routes', () => {
     });
     const response = await app.request('http://127.0.0.1:4567/api/commands/probe', {
       method: 'POST',
-      headers: {
-        'X-DevSurface-Intent': 'dashboard'
-      }
+      headers: await mutationHeaders(app)
     });
     await finalStatePromise;
 
@@ -256,9 +309,7 @@ describe('api routes', () => {
 
     const response = await app.request('http://127.0.0.1:4567/api/env/copy', {
       method: 'POST',
-      headers: {
-        'X-DevSurface-Intent': 'dashboard'
-      }
+      headers: await mutationHeaders(app)
     });
 
     expect(response.status).not.toBe(200);
@@ -284,9 +335,7 @@ describe('api routes', () => {
 
     const response = await app.request('http://127.0.0.1:4567/api/env/copy', {
       method: 'POST',
-      headers: {
-        'X-DevSurface-Intent': 'dashboard'
-      }
+      headers: await mutationHeaders(app)
     });
 
     expect(response.status).toBe(400);
@@ -316,5 +365,85 @@ describe('api routes', () => {
     } finally {
       process.chdir(oldCwd);
     }
+  });
+
+  it('rejects local mutations without the session token', async () => {
+    const root = await tempProject();
+    await writeJson(path.join(root, 'package.json'), {
+      name: 'token-demo',
+      scripts: {}
+    });
+    await fs.writeFile(path.join(root, '.env.example'), 'DATABASE_URL=example\n', 'utf8');
+    const app = await createTestApp(root);
+
+    const response = await app.request('http://127.0.0.1:4567/api/env/copy', {
+      method: 'POST',
+      headers: {
+        'X-DevSurface-Intent': 'dashboard'
+      }
+    });
+
+    expect(response.status).toBe(403);
+    await expect(fs.access(path.join(root, '.env'))).rejects.toBeTruthy();
+  });
+
+  it('rejects configured commands with shell metacharacters', async () => {
+    const root = await tempProject();
+    await writeJson(path.join(root, 'package.json'), {
+      name: 'shell-config-demo',
+      scripts: {}
+    });
+    await writeJson(path.join(root, 'devsurface.config.json'), {
+      commands: {
+        chained: `${process.execPath} -e "console.log(1)"; echo pwned`
+      }
+    });
+    const app = await createTestApp(root);
+
+    const response = await app.request('http://127.0.0.1:4567/api/commands/chained', {
+      method: 'POST',
+      headers: await mutationHeaders(app)
+    });
+
+    expect(response.status).toBe(400);
+  });
+
+  it('rejects dangerous configured commands on the server', async () => {
+    const root = await tempProject();
+    await writeJson(path.join(root, 'package.json'), {
+      name: 'danger-config-demo',
+      scripts: {}
+    });
+    await writeJson(path.join(root, 'devsurface.config.json'), {
+      commands: {
+        wipe: 'docker volume rm data'
+      }
+    });
+    const app = await createTestApp(root);
+
+    const response = await app.request('http://127.0.0.1:4567/api/commands/wipe', {
+      method: 'POST',
+      headers: await mutationHeaders(app)
+    });
+
+    expect(response.status).toBe(403);
+  });
+
+  it('rejects dangerous package scripts on the server', async () => {
+    const root = await tempProject();
+    await writeJson(path.join(root, 'package.json'), {
+      name: 'danger-script-demo',
+      scripts: {
+        reset: 'prisma migrate reset --force'
+      }
+    });
+    const app = await createTestApp(root);
+
+    const response = await app.request('http://127.0.0.1:4567/api/run/reset', {
+      method: 'POST',
+      headers: await mutationHeaders(app)
+    });
+
+    expect(response.status).toBe(403);
   });
 });

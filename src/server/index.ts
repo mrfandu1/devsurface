@@ -6,9 +6,11 @@ import { createAdaptorServer } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
 import open from 'open';
+import type { DockerController } from '../core/docker/compose.js';
 import { ProcessManager } from '../core/process/manager.js';
 import { registerApiRoutes } from './routes/api.js';
 import { setupWebSocket } from './routes/ws.js';
+import { createMutationToken } from './mutationToken.js';
 
 export const HOST = '127.0.0.1';
 export const DEFAULT_PORT = 4567;
@@ -137,9 +139,14 @@ async function closeHttpServer(server: Server): Promise<void> {
 export async function createApp(options: {
   projectRoot: string;
   processManager: ProcessManager;
+  dockerController?: DockerController;
+  mutationToken?: string;
 }): Promise<Hono> {
   const app = new Hono();
-  registerApiRoutes(app, options);
+  registerApiRoutes(app, {
+    ...options,
+    mutationToken: options.mutationToken ?? createMutationToken()
+  });
 
   const webDistDir = await findWebDistDir();
   if (webDistDir !== null) {

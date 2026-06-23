@@ -1,6 +1,6 @@
 {
   "name": "devsurface",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Turn any Node.js repository into a local developer control panel.",
   "type": "module",
   "license": "MIT",
@@ -19,6 +19,8 @@
   "files": [
     "dist",
     "src/web/dist",
+    "action.yml",
+    "action/dist",
     "docs/devsurface-badge.svg",
     "docs/devsurface-demo.gif",
     "README.md",
@@ -27,7 +29,8 @@
     "CHANGELOG.md"
   ],
   "scripts": {
-    "build": "npm run build:web && npm run build:cli",
+    "build": "npm run build:web && npm run build:cli && npm run build:action",
+    "build:action": "tsup src/action/index.ts --format esm --platform node --target node20 --clean --out-dir action/dist",
     "build:cli": "tsup src/cli/index.ts --format esm --dts --sourcemap --clean --out-dir dist/cli",
     "build:web": "vite build",
     "dev": "tsx src/cli/index.ts",
@@ -42,10 +45,7 @@
     "commander": "^12.1.0",
     "cross-spawn": "^7.0.6",
     "hono": "^4.6.16",
-    "open": "^10.1.0",
     "picocolors": "^1.1.1",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
     "ws": "^8.18.0",
     "yaml": "^2.6.1"
   },
@@ -60,7 +60,10 @@
     "@typescript-eslint/parser": "^8.19.1",
     "eslint": "^8.57.1",
     "eslint-config-prettier": "^9.1.0",
+    "open": "^10.1.0",
     "prettier": "^3.4.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "tsup": "^8.5.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",

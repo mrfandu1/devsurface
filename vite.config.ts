@@ -8,6 +8,11 @@ const repoRoot = path.dirname(fileURLToPath(import.meta.url));
 export default defineConfig({
   root: path.join(repoRoot, 'src', 'web'),
   plugins: [react()],
+  resolve: {
+    alias: {
+      '@core': path.join(repoRoot, 'src', 'core')
+    }
+  },
   build: {
     outDir: path.join(repoRoot, 'src', 'web', 'dist'),
     emptyOutDir: true

@@ -15,6 +15,20 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm run format:check
+      - run: npm run typecheck
       - run: npm run lint
       - run: npm test
       - run: npm run build
+      - run: git diff --exit-code -- action/dist/index.js
+
+  action:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./
+        with:
+          comment: 'false'
+          fail-on: warning

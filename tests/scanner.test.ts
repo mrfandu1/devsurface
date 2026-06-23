@@ -290,4 +290,19 @@ describe('scanner', () => {
     expect(scan.framework?.detected).toContain('Vite');
     expect(scan.ports.map((port) => port.port)).toContain(4123);
   });
+
+  it('ignores README symlinks that resolve outside the project root', async () => {
+    const root = await tempProject();
+    const outside = await tempProject();
+    await writeJson(path.join(root, 'package.json'), {
+      name: 'readme-link-demo',
+      scripts: {}
+    });
+    await fs.writeFile(path.join(outside, 'README.md'), '# outside readme\n', 'utf8');
+    await fs.symlink(path.join(outside, 'README.md'), path.join(root, 'README.md'), 'file');
+
+    const scan = await scanProject(root);
+    expect(scan.readme.exists).toBe(false);
+    expect(scan.readme.path).toBeNull();
+  });
 });

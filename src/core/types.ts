@@ -40,11 +40,17 @@ export interface DockerInfo {
   composeFiles: string[];
   services: DockerServiceInfo[];
   dockerRunning: boolean | null;
+  daemonStatus: DockerDaemonStatus;
+  message: string | null;
 }
+
+export type DockerDaemonStatus = 'running' | 'stopped' | 'not-installed' | 'unknown';
+export type DockerServiceStatus = 'running' | 'stopped' | 'error' | 'unknown';
 
 export interface DockerServiceInfo {
   name: string;
-  status: 'running' | 'stopped' | 'unknown';
+  status: DockerServiceStatus;
+  statusDetail: string | null;
   containerId: string | null;
 }
 

@@ -1,11 +1,6 @@
+import { isDangerousCommand } from '@core/security/dangerousCommand.js';
 import type { ManagedProcessSnapshot, ScanResult } from '../types';
 import { Panel } from './Panel';
-
-function isDangerousCommand(command: string): boolean {
-  return /\b(rm\s+-rf|docker\s+volume\s+rm|drop\s+database|prisma\s+migrate\s+reset|git\s+clean\s+-fd)\b/i.test(
-    command
-  );
-}
 
 function buildDisplayCommand(project: ScanResult, script: string): string {
   return `${project.packageManager ?? 'npm'} run ${script}`;

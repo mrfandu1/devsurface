@@ -1,4 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { safeDisplayText } from '@core/security/text.js';
+import { isDangerousCommand } from '@core/security/dangerousCommand.js';
+import { isSafeHttpUrl } from '@core/security/url.js';
+import { DEV_SURFACE_VERSION } from '../../version';
 import {
   appUrlForPort,
   candidatePortsForScript,
@@ -8,9 +12,20 @@ import {
 import { useProject } from './hooks/useProject';
 import { useSocket } from './hooks/useSocket';
 import { getDashboardShortcut, type DashboardShortcutView } from './keyboardShortcuts';
+import { mutationHeaders } from './mutation';
 import type { DoctorWarning, ManagedProcessSnapshot, ProcessLogEvent, ScanResult } from './types';
 
-const DEV_SURFACE_VERSION = '0.2.0';
+type DockerAction = 'start' | 'stop' | 'logs';
+
+interface DockerBusyState {
+  service: string;
+  action: DockerAction;
+}
+
+interface DockerLogState {
+  service: string;
+  content: string;
+}
 
 function mergeProcesses(
   polledProcesses: ManagedProcessSnapshot[],
@@ -101,12 +116,6 @@ function scriptOrder(project: ScanResult): string[] {
   return [...ordered, ...remaining];
 }
 
-function isDangerousCommand(command: string): boolean {
-  return /\b(rm\s+-rf|docker\s+volume\s+rm|drop\s+database|prisma\s+migrate\s+reset|git\s+clean\s+-fd)\b/i.test(
-    command
-  );
-}
-
 function configuredCommandGroups(
   project: ScanResult
 ): Array<{ name: string; commands: Array<{ name: string; command: string }> }> {
@@ -190,8 +199,11 @@ function createPendingAppWindow(): Window | null {
     const appWindow = window.open('', '_blank');
     if (appWindow !== null) {
       appWindow.document.title = 'Starting local app';
-      appWindow.document.body.innerHTML =
-        '<main style="font: 14px system-ui; padding: 24px;">Starting local app...</main>';
+      const main = appWindow.document.createElement('main');
+      main.style.font = '14px system-ui';
+      main.style.padding = '24px';
+      main.textContent = 'Starting local app...';
+      appWindow.document.body.replaceChildren(main);
     }
     return appWindow;
   } catch {
@@ -707,7 +719,7 @@ function ConfiguredCommandsSection({
   return (
     <DrawerSection title="Configured Commands">
       <div className="configured-command-groups">
-        {project.config?.config.docs ? (
+        {project.config?.config.docs && isSafeHttpUrl(project.config.config.docs) ? (
           <a
             className="docs-link"
             href={project.config.config.docs}
@@ -908,7 +920,10 @@ function ServicesInspector({ project, onDetect }: { project: ScanResult; onDetec
         <>
           <span>
             {docker?.services.filter((service) => service.status === 'running').length ?? 0}{' '}
-            services running
+            {docker?.services.filter((service) => service.status === 'running').length === 1
+              ? 'service'
+              : 'services'}{' '}
+            running
           </span>
           <button className="minor-button" onClick={onDetect} type="button">
             <Icon name="refresh" />
@@ -919,12 +934,143 @@ function ServicesInspector({ project, onDetect }: { project: ScanResult; onDetec
     >
       <div className="service-state">
         <span>Docker Compose</span>
-        <strong className={docker === null ? 'text-bad' : 'text-ok'}>
-          {docker === null ? 'not detected' : docker.dockerRunning ? 'running' : 'detected'}
+        <strong
+          className={
+            docker === null
+              ? 'text-bad'
+              : docker.daemonStatus === 'running'
+                ? 'text-ok'
+                : 'text-bad'
+          }
+        >
+          {docker === null
+            ? 'not detected'
+            : docker.daemonStatus === 'running'
+              ? 'running'
+              : docker.daemonStatus.replace('-', ' ')}
           {docker === null ? <Icon name="alert" /> : null}
         </strong>
       </div>
     </InspectorPanel>
+  );
+}
+
+function dockerStatusLabel(
+  status: NonNullable<ScanResult['docker']>['services'][number]['status']
+) {
+  return status === 'unknown' ? 'unavailable' : status;
+}
+
+function DockerServicesWorkspace({
+  docker,
+  busy,
+  logs,
+  error,
+  onStart,
+  onStop,
+  onLogs
+}: {
+  docker: ScanResult['docker'];
+  busy: DockerBusyState | null;
+  logs: DockerLogState | null;
+  error: string | null;
+  onStart: (service: string) => Promise<void>;
+  onStop: (service: string) => Promise<void>;
+  onLogs: (service: string) => Promise<void>;
+}) {
+  if (docker === null) {
+    return <p className="drawer-note">No Docker Compose file was detected in this project.</p>;
+  }
+
+  const daemonReady = docker.daemonStatus === 'running';
+
+  return (
+    <div className="docker-workspace">
+      <div className={`docker-daemon-state daemon-${docker.daemonStatus}`}>
+        <div>
+          <span>Docker engine</span>
+          <strong>{docker.daemonStatus.replace('-', ' ')}</strong>
+        </div>
+        {docker.message ? <p>{docker.message}</p> : null}
+      </div>
+
+      <div className="compose-file-list">
+        {docker.composeFiles.map((composeFile) => (
+          <code key={composeFile}>{formatPath(composeFile)}</code>
+        ))}
+      </div>
+
+      {error ? <p className="docker-action-error">{error}</p> : null}
+
+      {docker.services.length === 0 ? (
+        <p className="drawer-note">No services could be parsed from the Compose file.</p>
+      ) : (
+        <div className="docker-service-table">
+          {docker.services.map((service) => {
+            const serviceBusy = busy?.service === service.name;
+            const running = service.status === 'running';
+            return (
+              <article className="docker-service-row" key={service.name}>
+                <div className="docker-service-identity">
+                  <strong>{service.name}</strong>
+                  <span>{service.statusDetail ?? 'No container status reported'}</span>
+                </div>
+                <span className={`badge service-badge service-${service.status}`}>
+                  <i />
+                  {dockerStatusLabel(service.status)}
+                </span>
+                <div className="docker-service-actions">
+                  {running ? (
+                    <button
+                      className="minor-button"
+                      disabled={!daemonReady || serviceBusy}
+                      onClick={() => void onStop(service.name)}
+                      type="button"
+                    >
+                      <Icon name="stop" />
+                      {busy?.service === service.name && busy.action === 'stop'
+                        ? 'Stopping'
+                        : 'Stop'}
+                    </button>
+                  ) : (
+                    <button
+                      className="minor-button"
+                      disabled={!daemonReady || serviceBusy}
+                      onClick={() => void onStart(service.name)}
+                      type="button"
+                    >
+                      <Icon name="play" />
+                      {busy?.service === service.name && busy.action === 'start'
+                        ? 'Starting'
+                        : 'Start'}
+                    </button>
+                  )}
+                  <button
+                    className="minor-button"
+                    disabled={!daemonReady || serviceBusy}
+                    onClick={() => void onLogs(service.name)}
+                    type="button"
+                  >
+                    <Icon name="doc" />
+                    {busy?.service === service.name && busy.action === 'logs' ? 'Loading' : 'Logs'}
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+
+      {logs ? (
+        <section className="docker-log-panel" aria-label={`${logs.service} Docker logs`}>
+          <header>
+            <strong>{logs.service}</strong>
+            <span>Last 200 lines</span>
+          </header>
+          <pre>{safeDisplayText(logs.content || 'No logs returned for this service.')}</pre>
+        </section>
+      ) : null}
+    </div>
   );
 }
 
@@ -1141,7 +1287,7 @@ function LogConsole({ logs, limit = 220 }: { logs: ProcessLogEvent[]; limit?: nu
             <time>{new Date(log.timestamp).toLocaleTimeString()}</time>
             <strong>{log.script}</strong>
             <span>{log.stream}</span>
-            <pre>{log.message}</pre>
+            <pre>{safeDisplayText(log.message)}</pre>
           </div>
         ))
       )}
@@ -1234,6 +1380,12 @@ function DetailDrawer({
   lastRefreshed,
   onRunScript,
   onStopProcess,
+  dockerBusy,
+  dockerLogs,
+  dockerError,
+  onStartDockerService,
+  onStopDockerService,
+  onLoadDockerLogs,
   onClose,
   onSettingsChange
 }: {
@@ -1246,6 +1398,12 @@ function DetailDrawer({
   lastRefreshed: Date;
   onRunScript: (script: string) => Promise<void>;
   onStopProcess: (pid: string) => Promise<void>;
+  dockerBusy: DockerBusyState | null;
+  dockerLogs: DockerLogState | null;
+  dockerError: string | null;
+  onStartDockerService: (service: string) => Promise<void>;
+  onStopDockerService: (service: string) => Promise<void>;
+  onLoadDockerLogs: (service: string) => Promise<void>;
   onClose: () => void;
   onSettingsChange: (settings: DashboardSettings) => void;
 }) {
@@ -1415,18 +1573,15 @@ function DetailDrawer({
         {drawer === 'services' ? (
           <div className="drawer-content">
             <DrawerSection title="Docker Compose">
-              {project.docker === null ? (
-                <p className="drawer-note">No Docker Compose file was detected in this project.</p>
-              ) : (
-                <div className="drawer-table two-col">
-                  {project.docker.services.map((service) => (
-                    <div className="drawer-row" key={service.name}>
-                      <strong>{service.name}</strong>
-                      <span>{service.status}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <DockerServicesWorkspace
+                docker={project.docker}
+                busy={dockerBusy}
+                logs={dockerLogs}
+                error={dockerError}
+                onStart={onStartDockerService}
+                onStop={onStopDockerService}
+                onLogs={onLoadDockerLogs}
+              />
             </DrawerSection>
           </div>
         ) : null}
@@ -1530,6 +1685,12 @@ function SectionPage({
   onRunScript,
   onRunConfiguredCommand,
   onStopProcess,
+  dockerBusy,
+  dockerLogs,
+  dockerError,
+  onStartDockerService,
+  onStopDockerService,
+  onLoadDockerLogs,
   onRefresh,
   onSettingsChange
 }: {
@@ -1543,6 +1704,12 @@ function SectionPage({
   onRunScript: (script: string) => Promise<void>;
   onRunConfiguredCommand: (name: string, command: string) => Promise<void>;
   onStopProcess: (pid: string) => Promise<void>;
+  dockerBusy: DockerBusyState | null;
+  dockerLogs: DockerLogState | null;
+  dockerError: string | null;
+  onStartDockerService: (service: string) => Promise<void>;
+  onStopDockerService: (service: string) => Promise<void>;
+  onLoadDockerLogs: (service: string) => Promise<void>;
   onRefresh: () => Promise<void>;
   onSettingsChange: (settings: DashboardSettings) => void;
 }) {
@@ -1555,9 +1722,6 @@ function SectionPage({
     logs: 'Logs',
     settings: 'Settings'
   };
-
-  const manager = project.packageManager ?? 'npm';
-  const installCommand = manager === 'npm' ? 'npm ci' : `${manager} install`;
 
   return (
     <section className="section-page">
@@ -1692,23 +1856,17 @@ function SectionPage({
       ) : null}
 
       {view === 'services' ? (
-        <div className="section-grid">
+        <div className="section-grid single">
           <DrawerSection title="Docker Compose">
-            {project.docker === null ? (
-              <p className="drawer-note">No Docker Compose file was detected in this project.</p>
-            ) : (
-              <div className="drawer-table two-col">
-                {project.docker.services.map((service) => (
-                  <div className="drawer-row" key={service.name}>
-                    <strong>{service.name}</strong>
-                    <span>{service.status}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </DrawerSection>
-          <DrawerSection title="Install Command">
-            <CommandBlock command={installCommand} />
+            <DockerServicesWorkspace
+              docker={project.docker}
+              busy={dockerBusy}
+              logs={dockerLogs}
+              error={dockerError}
+              onStart={onStartDockerService}
+              onStop={onStopDockerService}
+              onLogs={onLoadDockerLogs}
+            />
           </DrawerSection>
         </div>
       ) : null}
@@ -1761,6 +1919,9 @@ export default function App() {
   const [settings, setSettings] = useState<DashboardSettings>(() => ({
     ...DEFAULT_DASHBOARD_SETTINGS
   }));
+  const [dockerBusy, setDockerBusy] = useState<DockerBusyState | null>(null);
+  const [dockerLogs, setDockerLogs] = useState<DockerLogState | null>(null);
+  const [dockerError, setDockerError] = useState<string | null>(null);
   const processes = useMemo(
     () => mergeProcesses(projectState.processes, socket.processes),
     [projectState.processes, socket.processes]
@@ -1826,9 +1987,7 @@ export default function App() {
   async function postDashboardAction(pathname: string): Promise<boolean> {
     const response = await fetch(pathname, {
       method: 'POST',
-      headers: {
-        'X-DevSurface-Intent': 'dashboard'
-      }
+      headers: await mutationHeaders()
     });
     return response.ok;
   }
@@ -1896,9 +2055,7 @@ export default function App() {
     try {
       const response = await fetch(`/api/run/${encodeURIComponent(script)}`, {
         method: 'POST',
-        headers: {
-          'X-DevSurface-Intent': 'dashboard'
-        }
+        headers: await mutationHeaders()
       });
       if (!response.ok) {
         closePendingAppWindow(pendingAppWindow);
@@ -1934,9 +2091,7 @@ export default function App() {
 
     const response = await fetch(`/api/commands/${encodeURIComponent(name)}`, {
       method: 'POST',
-      headers: {
-        'X-DevSurface-Intent': 'dashboard'
-      }
+      headers: await mutationHeaders()
     });
     if (!response.ok) {
       throw new Error(`Unable to start ${name}`);
@@ -1947,9 +2102,7 @@ export default function App() {
   async function stopProcess(pid: string): Promise<void> {
     await fetch(`/api/run/${encodeURIComponent(pid)}`, {
       method: 'DELETE',
-      headers: {
-        'X-DevSurface-Intent': 'dashboard'
-      }
+      headers: await mutationHeaders()
     });
     await refreshProject();
   }
@@ -1964,9 +2117,7 @@ export default function App() {
 
     const response = await fetch('/api/env/copy', {
       method: 'POST',
-      headers: {
-        'X-DevSurface-Intent': 'dashboard'
-      }
+      headers: await mutationHeaders()
     });
     if (!response.ok) {
       const payload = (await response.json().catch(() => null)) as { error?: string } | null;
@@ -1974,6 +2125,60 @@ export default function App() {
     }
 
     await refreshProject();
+  }
+
+  async function dockerResponseError(response: Response, fallback: string): Promise<string> {
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+    return payload?.error ?? fallback;
+  }
+
+  async function changeDockerService(service: string, action: 'start' | 'stop'): Promise<void> {
+    const command =
+      action === 'start'
+        ? `docker compose up -d -- ${service}`
+        : `docker compose stop -- ${service}`;
+    if (!window.confirm(`Run this Docker Compose command?\n\n${command}`)) {
+      return;
+    }
+
+    setDockerBusy({ service, action });
+    setDockerError(null);
+    try {
+      const response = await fetch(`/api/docker/${encodeURIComponent(service)}/${action}`, {
+        method: 'POST',
+        headers: await mutationHeaders()
+      });
+      if (!response.ok) {
+        throw new Error(
+          await dockerResponseError(response, `Unable to ${action} Docker service "${service}".`)
+        );
+      }
+      setDockerLogs(null);
+      await refreshProject();
+    } catch (error) {
+      setDockerError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setDockerBusy(null);
+    }
+  }
+
+  async function loadDockerLogs(service: string): Promise<void> {
+    setDockerBusy({ service, action: 'logs' });
+    setDockerError(null);
+    try {
+      const response = await fetch(`/api/docker/${encodeURIComponent(service)}/logs`);
+      if (!response.ok) {
+        throw new Error(
+          await dockerResponseError(response, `Unable to load Docker logs for "${service}".`)
+        );
+      }
+      const payload = (await response.json()) as { service: string; logs: string };
+      setDockerLogs({ service: payload.service, content: payload.logs });
+    } catch (error) {
+      setDockerError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setDockerBusy(null);
+    }
   }
 
   if (projectState.loading && projectState.project === null) {
@@ -2090,6 +2295,12 @@ export default function App() {
               onRunScript={runScript}
               onRunConfiguredCommand={runConfiguredCommand}
               onStopProcess={stopProcess}
+              dockerBusy={dockerBusy}
+              dockerLogs={dockerLogs}
+              dockerError={dockerError}
+              onStartDockerService={(service) => changeDockerService(service, 'start')}
+              onStopDockerService={(service) => changeDockerService(service, 'stop')}
+              onLoadDockerLogs={loadDockerLogs}
               onRefresh={refreshProject}
               onSettingsChange={setSettings}
             />
@@ -2106,6 +2317,12 @@ export default function App() {
         lastRefreshed={lastRefreshed}
         onRunScript={runScript}
         onStopProcess={stopProcess}
+        dockerBusy={dockerBusy}
+        dockerLogs={dockerLogs}
+        dockerError={dockerError}
+        onStartDockerService={(service) => changeDockerService(service, 'start')}
+        onStopDockerService={(service) => changeDockerService(service, 'stop')}
+        onLoadDockerLogs={loadDockerLogs}
         onClose={() => setDrawer(null)}
         onSettingsChange={setSettings}
       />

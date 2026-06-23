@@ -2,6 +2,7 @@ import pc from 'picocolors';
 import { runDoctor } from '../../core/doctor/index.js';
 import { scanProject } from '../../core/scanner/index.js';
 import { startDevSurfaceServer } from '../../server/index.js';
+import { DEV_SURFACE_VERSION } from '../../version.js';
 import { printScanResult } from './scan.js';
 
 export async function startCommand(options: {
@@ -10,7 +11,7 @@ export async function startCommand(options: {
   openBrowser?: boolean;
 }): Promise<void> {
   const cwd = options.cwd ?? process.cwd();
-  console.log(pc.bold(`DevSurface v0.2.0`));
+  console.log(pc.bold(`DevSurface v${DEV_SURFACE_VERSION}`));
   console.log('Scanning project...\n');
 
   const scan = await scanProject(cwd);

@@ -1,0 +1,39 @@
+name: DevSurface Health Check
+description: Check Node.js repository onboarding health without running project code.
+author: mrfandu1
+
+branding:
+  icon: activity
+  color: blue
+
+inputs:
+  path:
+    description: Repository-relative directory to check.
+    required: false
+    default: .
+  fail-on:
+    description: 'Minimum severity that fails the action: error, warning, or never.'
+    required: false
+    default: error
+  comment:
+    description: Create or update a pull request comment when permissions allow.
+    required: false
+    default: 'true'
+  github-token:
+    description: Token used for pull request comments.
+    required: false
+    default: '${{ github.token }}'
+
+outputs:
+  errors:
+    description: Number of error-level checks.
+  warnings:
+    description: Number of warning-level checks.
+  info:
+    description: Number of informational checks.
+  outcome:
+    description: healthy or issues-found.
+
+runs:
+  using: node20
+  main: action/dist/index.js

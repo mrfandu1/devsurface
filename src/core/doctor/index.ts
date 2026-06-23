@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { extractScriptReferences } from '../documentation.js';
 import type { DoctorWarning, ScanResult } from '../types.js';
 import { scanProject } from '../scanner/index.js';
 
@@ -22,28 +23,6 @@ async function readIfPresent(filePath: string | null): Promise<string | null> {
   } catch {
     return null;
   }
-}
-
-function extractReadmeScriptReferences(readmeContent: string): string[] {
-  const references = new Set<string>();
-  const commandRegexes = [
-    /\bnpm\s+run\s+([A-Za-z0-9:_-]+)/g,
-    /\bpnpm\s+run\s+([A-Za-z0-9:_-]+)/g,
-    /\bbun\s+run\s+([A-Za-z0-9:_-]+)/g,
-    /\byarn\s+run\s+([A-Za-z0-9:_-]+)/g,
-    /\bnpm\s+(test|start|build)\b/g,
-    /\bpnpm\s+(test|start|build)\b/g,
-    /\byarn\s+(test|start|build)\b/g,
-    /\bbun\s+(test|start|build)\b/g
-  ];
-
-  for (const regex of commandRegexes) {
-    for (const match of readmeContent.matchAll(regex)) {
-      references.add(match[1]);
-    }
-  }
-
-  return Array.from(references);
 }
 
 function warning(
@@ -131,7 +110,7 @@ export async function runDoctor(root = process.cwd(), scan?: ScanResult): Promis
   } else {
     const readme = await readIfPresent(result.readme.path);
     if (readme !== null) {
-      const references = extractReadmeScriptReferences(readme);
+      const references = extractScriptReferences(readme);
       const missingScripts = references.filter((script) => result.scripts[script] === undefined);
       if (missingScripts.length > 0) {
         warnings.push(
@@ -163,7 +142,7 @@ export async function runDoctor(root = process.cwd(), scan?: ScanResult): Promis
         'docker-not-running',
         'warning',
         'Docker Compose found but Docker is not running',
-        'A compose file exists, but the Docker daemon did not answer docker info.'
+        result.docker.message ?? 'A compose file exists, but Docker is not available.'
       )
     );
   }
@@ -188,10 +167,6 @@ export async function runDoctor(root = process.cwd(), scan?: ScanResult): Promis
         'package.json does not define a build script.'
       )
     );
-  }
-
-  if (!result.license.exists) {
-    warnings.push(warning('missing-license', 'info', 'No LICENSE', 'No LICENSE file was found.'));
   }
 
   return warnings;

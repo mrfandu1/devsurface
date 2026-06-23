@@ -1,6 +1,9 @@
 import spawn from 'cross-spawn';
 import type { PackageManager } from '../types.js';
+import { isDangerousCommand } from '../security/dangerousCommand.js';
 import { resolveExecutableOutsideRoot } from './executable.js';
+
+export { isDangerousCommand };
 
 export interface PackageRunCommand {
   command: string;
@@ -87,10 +90,115 @@ export async function resolvePackageInstallCommand(options: {
   };
 }
 
-export function isDangerousCommand(command: string): boolean {
-  return /\b(rm\s+-rf|docker\s+volume\s+rm|drop\s+database|prisma\s+migrate\s+reset|git\s+clean\s+-fd)\b/i.test(
-    command
-  );
+export function splitCommandLine(command: string): string[] {
+  const tokens: string[] = [];
+  let current = '';
+  let quote: '"' | "'" | null = null;
+
+  for (let index = 0; index < command.length; index += 1) {
+    const character = command[index] ?? '';
+    if (quote !== null) {
+      if (character === quote) {
+        quote = null;
+      } else if (character === '\\' && quote === '"') {
+        const next = command[index + 1];
+        if (next === '"' || next === '\\') {
+          index += 1;
+          current += next ?? '';
+        } else {
+          current += character;
+        }
+      } else {
+        current += character;
+      }
+      continue;
+    }
+
+    if (character === '"' || character === "'") {
+      quote = character;
+      continue;
+    }
+
+    if (/\s/.test(character)) {
+      if (current.length > 0) {
+        tokens.push(current);
+        current = '';
+      }
+      continue;
+    }
+
+    current += character;
+  }
+
+  if (current.length > 0) {
+    tokens.push(current);
+  }
+
+  return tokens;
+}
+
+export function containsShellMetacharacters(command: string): boolean {
+  let quote: '"' | "'" | null = null;
+
+  for (let index = 0; index < command.length; index += 1) {
+    const character = command[index] ?? '';
+    if (quote !== null) {
+      if (character === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (character === '"' || character === "'") {
+      quote = character;
+      continue;
+    }
+
+    if (character === '\n' || character === '\r') {
+      return true;
+    }
+
+    if (';|&<>'.includes(character)) {
+      return true;
+    }
+
+    if (character === '`') {
+      return true;
+    }
+
+    if (character === '$' && (command[index + 1] === '(' || command[index + 1] === '{')) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+export async function resolveConfiguredCommand(
+  cwd: string,
+  command: string
+): Promise<PackageRunCommand | null> {
+  const trimmed = command.trim();
+  if (trimmed.length === 0 || containsShellMetacharacters(trimmed)) {
+    return null;
+  }
+
+  const tokens = splitCommandLine(trimmed);
+  if (tokens.length === 0) {
+    return null;
+  }
+
+  const [executableName, ...args] = tokens;
+  const executable = await resolveExecutableOutsideRoot(cwd, executableName);
+  if (executable === null) {
+    return null;
+  }
+
+  return {
+    command: executable,
+    args,
+    displayCommand: trimmed
+  };
 }
 
 export async function runPackageScriptToTerminal(options: {

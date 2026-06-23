@@ -5,6 +5,7 @@ import { initCommand } from './commands/init.js';
 import { runCommand } from './commands/run.js';
 import { scanCommand } from './commands/scan.js';
 import { startCommand } from './commands/start.js';
+import { DEV_SURFACE_VERSION } from '../version.js';
 
 const program = new Command();
 
@@ -28,7 +29,7 @@ function handle(command: Promise<void>): void {
 program
   .name('devsurface')
   .description('Turn any Node.js repository into a local developer control panel.')
-  .version('0.2.0')
+  .version(DEV_SURFACE_VERSION)
   .option('-p, --port <port>', 'dashboard port', toPort, 4567)
   .option('--no-open', 'do not open the browser automatically')
   .action((options: { port: number; open: boolean }) => {

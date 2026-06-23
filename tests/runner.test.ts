@@ -1,12 +1,15 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ProcessManager } from '../src/core/process/manager.js';
+import { LOG_MESSAGE_LIMIT, ProcessManager } from '../src/core/process/manager.js';
 import {
+  containsShellMetacharacters,
   getPackageInstallCommand,
   getPackageRunCommand,
   isDangerousCommand,
-  runPackageScriptToTerminal
+  resolveConfiguredCommand,
+  runPackageScriptToTerminal,
+  splitCommandLine
 } from '../src/core/process/runner.js';
 import { makeTempProject, removeTempProject } from './testUtils.js';
 
@@ -39,7 +42,60 @@ describe('process runner', () => {
 
   it('detects dangerous commands for UI warning treatment', () => {
     expect(isDangerousCommand('docker volume rm data')).toBe(true);
+    expect(isDangerousCommand('git clean -fdx')).toBe(true);
     expect(isDangerousCommand('npm run dev')).toBe(false);
+  });
+
+  it('parses configured commands without shell metacharacters', () => {
+    expect(splitCommandLine(`"${process.execPath}" -e "console.log('ok')"`)).toEqual([
+      process.execPath,
+      '-e',
+      "console.log('ok')"
+    ]);
+    expect(containsShellMetacharacters('npm run dev')).toBe(false);
+    expect(containsShellMetacharacters('node -e "x"; rm -rf /')).toBe(true);
+  });
+
+  it('resolves configured commands to executable argv pairs', async () => {
+    const root = await makeTempProject();
+    try {
+      const resolved = await resolveConfiguredCommand(
+        root,
+        `"${process.execPath}" -e "console.log('configured-ok')"`
+      );
+      expect(resolved).not.toBeNull();
+      expect(resolved?.args).toEqual(['-e', "console.log('configured-ok')"]);
+      expect(path.basename(resolved?.command ?? '')).toBe(path.basename(process.execPath));
+    } finally {
+      await removeTempProject(root);
+    }
+  });
+
+  it('bounds individual process log messages', async () => {
+    const manager = new ProcessManager();
+    const logs: string[] = [];
+    manager.on('log', (event: { message: string }) => {
+      logs.push(event.message);
+    });
+
+    manager.start({
+      cwd: process.cwd(),
+      script: 'large-log',
+      command: process.execPath,
+      args: ['-e', `process.stdout.write('${'x'.repeat(LOG_MESSAGE_LIMIT + 100)}')`],
+      displayCommand: 'node large-log'
+    });
+
+    await new Promise<void>((resolve) => {
+      manager.on('process', (event: { script: string; status: string }) => {
+        if (event.script === 'large-log' && event.status !== 'running') {
+          resolve();
+        }
+      });
+    });
+
+    const output = logs.find((message) => message.includes('x'));
+    expect(output?.length).toBeLessThanOrEqual(LOG_MESSAGE_LIMIT);
   });
 
   it('tracks process logs and exit state', async () => {

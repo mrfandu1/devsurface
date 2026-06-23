@@ -11,13 +11,20 @@ import { readPackageJson } from './packageJson.js';
 import { defaultPortsForFramework, detectPorts, inferPortsFromScripts } from './ports.js';
 import { extractScripts } from './scripts.js';
 
+function isWithinRoot(root: string, target: string): boolean {
+  const relative = path.relative(path.resolve(root), path.resolve(target));
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
 async function findFirstFile(root: string, candidates: string[]): Promise<FilePresence> {
+  const resolvedRoot = await fs.realpath(root).catch(() => path.resolve(root));
+
   for (const candidate of candidates) {
     const filePath = path.join(root, candidate);
     try {
-      const stat = await fs.stat(filePath);
-      if (stat.isFile()) {
-        return { path: filePath, exists: true };
+      const [stat, realPath] = await Promise.all([fs.stat(filePath), fs.realpath(filePath)]);
+      if (stat.isFile() && isWithinRoot(resolvedRoot, realPath)) {
+        return { path: realPath, exists: true };
       }
     } catch {
       // Keep looking through the candidate list.
@@ -32,8 +39,9 @@ function configuredPorts(configPorts: number[] | undefined): number[] {
 }
 
 export async function scanProject(root = process.cwd()): Promise<ScanResult> {
-  const config = await loadConfig(root);
-  const packageJson = await readPackageJson(root);
+  const resolvedRoot = await fs.realpath(root).catch(() => path.resolve(root));
+  const config = await loadConfig(resolvedRoot);
+  const packageJson = await readPackageJson(resolvedRoot);
   const scripts = extractScripts(packageJson) ?? {};
   const framework = detectFramework(packageJson);
   const portsToProbe = [
@@ -43,18 +51,18 @@ export async function scanProject(root = process.cwd()): Promise<ScanResult> {
   ];
 
   const [packageManager, env, docker, git, ports, readme, license] = await Promise.all([
-    detectPackageManager(root),
-    detectEnv(root, config?.config),
-    detectDocker(root),
-    detectGit(root),
+    detectPackageManager(resolvedRoot),
+    detectEnv(resolvedRoot, config?.config),
+    detectDocker(resolvedRoot),
+    detectGit(resolvedRoot),
     detectPorts(portsToProbe),
-    findFirstFile(root, ['README.md', 'README']),
-    findFirstFile(root, ['LICENSE', 'LICENSE.md', 'COPYING'])
+    findFirstFile(resolvedRoot, ['README.md', 'README']),
+    findFirstFile(resolvedRoot, ['LICENSE', 'LICENSE.md', 'COPYING'])
   ]);
 
   return {
-    root,
-    projectName: config?.config.name ?? packageJson?.data.name ?? path.basename(root),
+    root: resolvedRoot,
+    projectName: config?.config.name ?? packageJson?.data.name ?? path.basename(resolvedRoot),
     packageJson,
     packageManager: packageManager ?? (packageJson ? 'npm' : null),
     scripts,

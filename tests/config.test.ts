@@ -48,6 +48,16 @@ describe('config loader', () => {
     expect(config?.warnings[0]).toContain('invalid JSON');
   });
 
+  it('ignores config symlinks that resolve outside the project root', async () => {
+    const root = await tempProject();
+    const outside = await tempProject();
+    const outsideConfig = path.join(outside, 'devsurface.config.json');
+    await writeJson(outsideConfig, { name: 'outside' });
+    await fs.symlink(outsideConfig, path.join(root, 'devsurface.config.json'), 'file');
+
+    expect(await loadConfig(root)).toBeNull();
+  });
+
   it('drops invalid ports during validation', () => {
     const result = validateConfig({
       ports: [3000, -1, 'bad']
@@ -67,5 +77,14 @@ describe('config loader', () => {
       Array.from({ length: MAX_CONFIGURED_PORTS }, (_, index) => index + 1)
     );
     expect(result.warnings).toContain(`ports may contain at most ${MAX_CONFIGURED_PORTS} entries.`);
+  });
+
+  it('drops unsafe docs URLs during validation', () => {
+    const result = validateConfig({
+      docs: 'javascript:alert(1)'
+    });
+
+    expect(result.config.docs).toBeUndefined();
+    expect(result.warnings).toContain('docs must be an http or https URL.');
   });
 });

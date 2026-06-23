@@ -24,6 +24,7 @@ npm run format:check
 
 npm run build:cli builds the CLI with tsup.
 npm run build:web builds the web UI with Vite.
+npm run build:action builds the committed GitHub Action bundle.
 
 ## Key Directories
 
@@ -31,6 +32,7 @@ src/cli/ contains CLI commands.
 src/core/ contains scanners, doctor checks, config, and process runner code.
 src/server/ contains the Hono API server.
 src/web/ contains the React dashboard.
+src/action/ contains the GitHub Action runtime and report formatting.
 
 ## Rules
 

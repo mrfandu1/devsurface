@@ -1,3 +1,4 @@
+import { safeDisplayText } from '@core/security/text.js';
 import type { ManagedProcessSnapshot, ProcessLogEvent } from '../types';
 import { Panel } from './Panel';
 
@@ -33,7 +34,7 @@ export function LogsPanel({
             <div className={`log-line log-${log.stream}`} key={`${log.timestamp}-${index}`}>
               <time>{new Date(log.timestamp).toLocaleTimeString()}</time>
               <span>{log.script}</span>
-              <pre>{log.message}</pre>
+              <pre>{safeDisplayText(log.message)}</pre>
             </div>
           ))
         )}

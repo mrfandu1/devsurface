@@ -1,5 +1,7 @@
 node_modules/
 dist/
+!action/dist/
+!action/dist/index.js
 src/web/dist/
 .env
 .env.*
@@ -14,7 +16,9 @@ coverage/
 # Local-only planning and private security notes
 devsurface_PLAN.md
 *_PLAN.md
-security/
-security-notes/
-audit/
-threat-model/
+SECURITY-FIXES.md
+SECURITY-AUDIT*.md
+/security/
+/security-notes/
+/audit/
+/threat-model/

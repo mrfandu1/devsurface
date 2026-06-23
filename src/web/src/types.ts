@@ -36,10 +36,13 @@ export interface ScanResult {
     composeFiles: string[];
     services: Array<{
       name: string;
-      status: 'running' | 'stopped' | 'unknown';
+      status: 'running' | 'stopped' | 'error' | 'unknown';
+      statusDetail: string | null;
       containerId: string | null;
     }>;
     dockerRunning: boolean | null;
+    daemonStatus: 'running' | 'stopped' | 'not-installed' | 'unknown';
+    message: string | null;
   } | null;
   git: {
     branch: string | null;

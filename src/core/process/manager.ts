@@ -3,6 +3,9 @@ import type { ChildProcess } from 'node:child_process';
 import spawn from 'cross-spawn';
 import type { ManagedProcessSnapshot, ProcessLogEvent } from '../types.js';
 
+export const LOG_MESSAGE_LIMIT = 16_384;
+const LOG_ENTRY_LIMIT = 1000;
+
 interface ProcessRecord extends ManagedProcessSnapshot {
   child: ChildProcess;
 }
@@ -38,11 +41,10 @@ export class ProcessManager extends EventEmitter {
     command: string;
     args: string[];
     displayCommand: string;
-    shell?: boolean;
   }): ManagedProcessSnapshot {
     const child = spawn(options.command, options.args, {
       cwd: options.cwd,
-      shell: options.shell ?? false,
+      shell: false,
       windowsHide: true
     });
 
@@ -140,17 +142,19 @@ export class ProcessManager extends EventEmitter {
   }
 
   private emitLog(record: ProcessRecord, stream: ProcessLogEvent['stream'], message: string): void {
+    const boundedMessage =
+      message.length <= LOG_MESSAGE_LIMIT ? message : message.slice(-LOG_MESSAGE_LIMIT);
     const event: ProcessLogEvent = {
       pid: record.pid,
       script: record.script,
       stream,
-      message,
+      message: boundedMessage,
       timestamp: new Date().toISOString()
     };
 
     this.logs.push(event);
-    if (this.logs.length > 1000) {
-      this.logs.splice(0, this.logs.length - 1000);
+    if (this.logs.length > LOG_ENTRY_LIMIT) {
+      this.logs.splice(0, this.logs.length - LOG_ENTRY_LIMIT);
     }
 
     this.emit('log', event);

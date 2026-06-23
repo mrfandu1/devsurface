@@ -908,6 +908,14 @@ h2 {
   height: 16px;
 }
 
+.minor-button:disabled {
+  border-color: #d5d5d0;
+  background: #eeeeea;
+  color: #8a8a83;
+  cursor: not-allowed;
+  transform: none;
+}
+
 .port-list {
   display: grid;
 }
@@ -960,6 +968,173 @@ h2 {
 .service-state .icon {
   width: 15px;
   height: 15px;
+}
+
+.docker-workspace {
+  display: grid;
+  gap: 14px;
+}
+
+.docker-daemon-state {
+  display: grid;
+  gap: 7px;
+  border-left: 3px solid #08751f;
+  background: #edf5eb;
+  padding: 12px 14px;
+}
+
+.docker-daemon-state > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.docker-daemon-state span {
+  color: #565651;
+  font-size: 12px;
+}
+
+.docker-daemon-state strong {
+  color: #08751f;
+  font-size: 12px;
+  text-transform: capitalize;
+}
+
+.docker-daemon-state p,
+.docker-action-error {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.docker-daemon-state:not(.daemon-running) {
+  border-left-color: #a20d17;
+  background: #fff3f1;
+}
+
+.docker-daemon-state:not(.daemon-running) strong,
+.docker-action-error {
+  color: #a20d17;
+}
+
+.compose-file-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.compose-file-list code {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #d0d0ca;
+  border-radius: 3px;
+  background: #ffffff;
+  padding: 5px 8px;
+  color: #343430;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.docker-action-error {
+  border-left: 3px solid #a20d17;
+  background: #fff3f1;
+  padding: 9px 11px;
+}
+
+.docker-service-table {
+  display: grid;
+  border-top: 1px solid #d7d7d2;
+}
+
+.docker-service-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) auto auto;
+  min-height: 58px;
+  gap: 14px;
+  align-items: center;
+  border-bottom: 1px solid #d7d7d2;
+  padding: 9px 0;
+}
+
+.docker-service-identity {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.docker-service-identity strong {
+  color: #111111;
+  font-size: 13px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.docker-service-identity span {
+  overflow: hidden;
+  color: #686861;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.service-badge.service-stopped,
+.service-badge.service-unknown {
+  border-color: #d1c7aa;
+  background: #fff9e8;
+  color: #725400;
+}
+
+.service-badge.service-error {
+  border-color: #e2b6b6;
+  background: #fff3f1;
+  color: #a20d17;
+}
+
+.docker-service-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.docker-log-panel {
+  display: grid;
+  min-width: 0;
+  border: 1px solid #272725;
+  border-radius: 3px;
+  overflow: hidden;
+  background: #11110f;
+}
+
+.docker-log-panel header {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid #343431;
+  padding: 0 12px;
+  color: #f1f1eb;
+  font-size: 12px;
+}
+
+.docker-log-panel header span {
+  color: #a9a9a2;
+  font-size: 11px;
+}
+
+.docker-log-panel pre {
+  max-height: 360px;
+  margin: 0;
+  overflow: auto;
+  padding: 13px;
+  color: #d8ded4;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .health-state {
@@ -1791,6 +1966,16 @@ h2 {
 
   .setting-row {
     grid-template-columns: 1fr;
+  }
+
+  .docker-service-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding: 12px 0;
+  }
+
+  .docker-service-actions {
+    justify-content: flex-start;
   }
 
   .setting-control-group {

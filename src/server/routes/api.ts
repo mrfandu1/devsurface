@@ -4,14 +4,23 @@ import path from 'node:path';
 import spawn from 'cross-spawn';
 import type { Hono } from 'hono';
 import open from 'open';
+import {
+  DockerComposeController,
+  DockerOperationError,
+  type DockerController
+} from '../../core/docker/compose.js';
 import type { ProcessManager } from '../../core/process/manager.js';
 import {
+  isDangerousCommand,
+  resolveConfiguredCommand,
   resolvePackageInstallCommand,
   resolvePackageRunCommand
 } from '../../core/process/runner.js';
 import { runDoctor } from '../../core/doctor/index.js';
 import { scanProject } from '../../core/scanner/index.js';
 import { isAllowedLocalHostHeader, isAllowedLocalOrigin, isSameOrigin } from '../localAccess.js';
+import { hasValidMutationToken } from '../mutationToken.js';
+import { isAllowedTerminalCommand } from '../terminal.js';
 
 function isWithinRoot(root: string, target: string): boolean {
   const relative = path.relative(path.resolve(root), path.resolve(target));
@@ -159,8 +168,13 @@ function openTerminalAt(root: string): boolean {
     return launchDetached('open', ['-a', 'Terminal', root], root);
   }
 
-  const configuredTerminal = process.env.TERMINAL;
-  if (configuredTerminal !== undefined && findExecutable(configuredTerminal) !== null) {
+  const configuredTerminal = process.env.TERMINAL?.trim();
+  if (
+    configuredTerminal !== undefined &&
+    configuredTerminal.length > 0 &&
+    isAllowedTerminalCommand(configuredTerminal) &&
+    findExecutable(configuredTerminal) !== null
+  ) {
     return launchDetached(configuredTerminal, [], root);
   }
 
@@ -193,8 +207,17 @@ export function registerApiRoutes(
   options: {
     projectRoot: string;
     processManager: ProcessManager;
+    dockerController?: DockerController;
+    mutationToken: string;
   }
 ): void {
+  const dockerController =
+    options.dockerController ?? new DockerComposeController(options.projectRoot);
+
+  app.get('/api/session', (context) => {
+    return context.json({ token: options.mutationToken });
+  });
+
   app.use('/api/*', async (context, next) => {
     const host = context.req.header('host') ?? new URL(context.req.url).host;
     if (!isAllowedLocalHostHeader(host)) {
@@ -205,8 +228,10 @@ export function registerApiRoutes(
       const origin = context.req.header('origin') ?? null;
       const secFetchSite = context.req.header('sec-fetch-site') ?? null;
       const intent = context.req.header('x-devsurface-intent') ?? null;
+      const token = context.req.header('x-devsurface-token') ?? null;
       if (
         !hasMutationIntent(intent) ||
+        !hasValidMutationToken(token, options.mutationToken) ||
         isCrossSiteFetch(secFetchSite) ||
         !isAllowedMutationOrigin(context.req.url, origin)
       ) {
@@ -233,6 +258,60 @@ export function registerApiRoutes(
     return context.json(options.processManager.listLogs());
   });
 
+  app.get('/api/docker/:service/logs', async (context) => {
+    const service = decodeURIComponent(context.req.param('service'));
+    try {
+      return context.json(await dockerController.logs(service));
+    } catch (error) {
+      if (error instanceof DockerOperationError) {
+        if (error.code === 'compose-not-found' || error.code === 'service-not-found') {
+          return context.json({ error: error.message, code: error.code }, 404);
+        }
+        if (error.code === 'docker-not-installed' || error.code === 'docker-not-running') {
+          return context.json({ error: error.message, code: error.code }, 503);
+        }
+        return context.json({ error: error.message, code: error.code }, 502);
+      }
+      throw error;
+    }
+  });
+
+  app.post('/api/docker/:service/start', async (context) => {
+    const service = decodeURIComponent(context.req.param('service'));
+    try {
+      return context.json(await dockerController.start(service));
+    } catch (error) {
+      if (error instanceof DockerOperationError) {
+        if (error.code === 'compose-not-found' || error.code === 'service-not-found') {
+          return context.json({ error: error.message, code: error.code }, 404);
+        }
+        if (error.code === 'docker-not-installed' || error.code === 'docker-not-running') {
+          return context.json({ error: error.message, code: error.code }, 503);
+        }
+        return context.json({ error: error.message, code: error.code }, 502);
+      }
+      throw error;
+    }
+  });
+
+  app.post('/api/docker/:service/stop', async (context) => {
+    const service = decodeURIComponent(context.req.param('service'));
+    try {
+      return context.json(await dockerController.stop(service));
+    } catch (error) {
+      if (error instanceof DockerOperationError) {
+        if (error.code === 'compose-not-found' || error.code === 'service-not-found') {
+          return context.json({ error: error.message, code: error.code }, 404);
+        }
+        if (error.code === 'docker-not-installed' || error.code === 'docker-not-running') {
+          return context.json({ error: error.message, code: error.code }, 503);
+        }
+        return context.json({ error: error.message, code: error.code }, 502);
+      }
+      throw error;
+    }
+  });
+
   app.post('/api/run/:script', async (context) => {
     const script = decodeURIComponent(context.req.param('script'));
     const scan = await scanProject(options.projectRoot);
@@ -240,6 +319,10 @@ export function registerApiRoutes(
 
     if (packageScript === undefined) {
       return context.json({ error: `Script "${script}" was not found.` }, 404);
+    }
+
+    if (isDangerousCommand(packageScript)) {
+      return context.json({ error: 'Refusing to run dangerous script.' }, 403);
     }
 
     const command = await resolvePackageRunCommand({
@@ -295,13 +378,27 @@ export function registerApiRoutes(
       return context.json({ error: `Configured command "${name}" was not found.` }, 404);
     }
 
+    if (isDangerousCommand(configuredCommand)) {
+      return context.json({ error: 'Refusing to run dangerous command.' }, 403);
+    }
+
+    const resolvedCommand = await resolveConfiguredCommand(options.projectRoot, configuredCommand);
+    if (resolvedCommand === null) {
+      return context.json(
+        {
+          error:
+            'Configured command uses unsupported shell syntax. Use a simple executable with arguments, or move complex logic into a package.json script.'
+        },
+        400
+      );
+    }
+
     const processInfo = options.processManager.start({
       cwd: options.projectRoot,
       script: name,
-      command: configuredCommand,
-      args: [],
-      displayCommand: configuredCommand,
-      shell: true
+      command: resolvedCommand.command,
+      args: resolvedCommand.args,
+      displayCommand: resolvedCommand.displayCommand
     });
 
     return context.json({

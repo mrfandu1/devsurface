@@ -35,7 +35,7 @@ describe('doctor', () => {
     expect(warningIds).toContain('missing-test-script');
     expect(warningIds).toContain('missing-build-script');
     expect(warningIds).toContain('missing-readme');
-    expect(warningIds).toContain('missing-license');
+    expect(warningIds).not.toContain('missing-license');
   });
 
   it('reports README script references that do not exist', async () => {

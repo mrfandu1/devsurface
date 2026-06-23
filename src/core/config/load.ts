@@ -1,9 +1,15 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { isSafeHttpUrl } from '../security/url.js';
 import type { ConfigLoadResult, DevSurfaceConfig } from '../types.js';
 import { CONFIG_FILE_NAME } from './defaults.js';
 
 export const MAX_CONFIGURED_PORTS = 32;
+
+function isWithinRoot(root: string, target: string): boolean {
+  const relative = path.relative(root, target);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -108,6 +114,15 @@ export function validateConfig(raw: unknown): { config: DevSurfaceConfig; warnin
     warnings.push('services must be an object.');
   }
 
+  let docs: string | undefined;
+  if (typeof raw.docs === 'string' && raw.docs.length > 0) {
+    if (isSafeHttpUrl(raw.docs)) {
+      docs = raw.docs;
+    } else {
+      warnings.push('docs must be an http or https URL.');
+    }
+  }
+
   return {
     config: {
       name: typeof raw.name === 'string' ? raw.name : undefined,
@@ -117,7 +132,7 @@ export function validateConfig(raw: unknown): { config: DevSurfaceConfig; warnin
       ports: toPorts(raw.ports, warnings),
       env,
       services,
-      docs: typeof raw.docs === 'string' ? raw.docs : undefined
+      docs
     },
     warnings
   };
@@ -127,10 +142,17 @@ export async function loadConfig(root: string): Promise<ConfigLoadResult | null>
   const configPath = path.join(root, CONFIG_FILE_NAME);
 
   try {
-    const content = await fs.readFile(configPath, 'utf8');
+    const [realRoot, realConfigPath] = await Promise.all([
+      fs.realpath(root),
+      fs.realpath(configPath)
+    ]);
+    if (!isWithinRoot(realRoot, realConfigPath)) {
+      return null;
+    }
+    const content = await fs.readFile(realConfigPath, 'utf8');
     const parsed = JSON.parse(content) as unknown;
     const { config, warnings } = validateConfig(parsed);
-    return { path: configPath, config, warnings };
+    return { path: realConfigPath, config, warnings };
   } catch (error) {
     const code =
       typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined;
