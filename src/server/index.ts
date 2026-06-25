@@ -8,24 +8,21 @@ import { Hono } from 'hono';
 import open from 'open';
 import type { DockerController } from '../core/docker/compose.js';
 import { ProcessManager } from '../core/process/manager.js';
-import { registerApiRoutes } from './routes/api.js';
-import { setupWebSocket } from './routes/ws.js';
+import { Hub } from '../core/hub/runtime.js';
+import { registerApiRoutes, registerHubApiRoutes } from './routes/api.js';
+import { setupWebSocket, setupHubWebSocket } from './routes/ws.js';
 import { createMutationToken } from './mutationToken.js';
+import { initializeListenHost, DEFAULT_PORT } from './listenConfig.js';
 
-export const HOST = '127.0.0.1';
-export const DEFAULT_PORT = 4567;
+export { DEFAULT_HOST, DEFAULT_PORT, resolveHost } from './listenConfig.js';
 
 export interface DevSurfaceServer {
   url: string;
   port: number;
+  host: string;
+  hub: Hub;
   close: () => Promise<void>;
   processManager: ProcessManager;
-}
-
-function assertLocalHost(host: string): void {
-  if (host !== HOST) {
-    throw new Error('DevSurface must bind only to 127.0.0.1.');
-  }
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -54,18 +51,18 @@ async function findWebDistDir(): Promise<string | null> {
   return null;
 }
 
-function toListenError(error: unknown, port: number): Error {
+function toListenError(error: unknown, host: string, port: number): Error {
   const code = error instanceof Error ? (error as NodeJS.ErrnoException).code : undefined;
 
   if (code === 'EADDRINUSE') {
     return new Error(
-      `Port ${port} is already in use on ${HOST}. Stop the other process or run DevSurface with --port ${port + 1}.`,
+      `Port ${port} is already in use on ${host}. Stop the other process or run DevSurface with --port ${port + 1}.`,
       { cause: error }
     );
   }
 
   if (code === 'EACCES') {
-    return new Error(`DevSurface does not have permission to bind to ${HOST}:${port}.`, {
+    return new Error(`DevSurface does not have permission to bind to ${host}:${port}.`, {
       cause: error
     });
   }
@@ -73,9 +70,10 @@ function toListenError(error: unknown, port: number): Error {
   return error instanceof Error ? error : new Error(String(error));
 }
 
-async function listenOnLocalHost(
+async function listenOnHost(
   server: Server,
   wss: ReturnType<typeof setupWebSocket>,
+  host: string,
   port: number
 ): Promise<void> {
   await new Promise<void>((resolve, reject) => {
@@ -88,20 +86,14 @@ async function listenOnLocalHost(
     };
 
     const onError = (error: unknown) => {
-      if (settled) {
-        return;
-      }
-
+      if (settled) return;
       settled = true;
       cleanup();
-      reject(toListenError(error, port));
+      reject(toListenError(error, host, port));
     };
 
     const onListening = () => {
-      if (settled) {
-        return;
-      }
-
+      if (settled) return;
       settled = true;
       cleanup();
       resolve();
@@ -110,7 +102,7 @@ async function listenOnLocalHost(
     wss.once('error', onError);
     server.once('error', onError);
     server.once('listening', onListening);
-    server.listen(port, HOST);
+    server.listen(port, host);
   });
 }
 
@@ -136,18 +128,7 @@ async function closeHttpServer(server: Server): Promise<void> {
   });
 }
 
-export async function createApp(options: {
-  projectRoot: string;
-  processManager: ProcessManager;
-  dockerController?: DockerController;
-  mutationToken?: string;
-}): Promise<Hono> {
-  const app = new Hono();
-  registerApiRoutes(app, {
-    ...options,
-    mutationToken: options.mutationToken ?? createMutationToken()
-  });
-
+async function mountWebUi(app: Hono): Promise<void> {
   const webDistDir = await findWebDistDir();
   if (webDistDir !== null) {
     app.use('/assets/*', serveStatic({ root: webDistDir }));
@@ -164,19 +145,99 @@ export async function createApp(options: {
       )
     );
   }
+}
 
+// Legacy single-project createApp (backward compat with existing tests)
+export async function createApp(options: {
+  projectRoot: string;
+  processManager: ProcessManager;
+  dockerController?: DockerController;
+  mutationToken?: string;
+}): Promise<Hono> {
+  const app = new Hono();
+  registerApiRoutes(app, {
+    ...options,
+    mutationToken: options.mutationToken ?? createMutationToken()
+  });
+  await mountWebUi(app);
   return app;
 }
 
+// Hub-mode createApp
+export async function createHubApp(options: { hub: Hub; mutationToken?: string }): Promise<Hono> {
+  const app = new Hono();
+  registerHubApiRoutes(app, {
+    hub: options.hub,
+    mutationToken: options.mutationToken ?? createMutationToken()
+  });
+  await mountWebUi(app);
+  return app;
+}
+
+export async function startHubServer(options: {
+  port?: number;
+  openBrowser?: boolean;
+  dataDir?: string;
+  initialWorkspace?: string;
+}): Promise<DevSurfaceServer> {
+  const host = initializeListenHost();
+  const port = options.port ?? DEFAULT_PORT;
+  const hub = new Hub({ dataDir: options.dataDir });
+  hub.attachCleanupHandlers();
+
+  if (options.initialWorkspace) {
+    await hub.registry.add(options.initialWorkspace);
+  }
+
+  const mutationToken = createMutationToken();
+  const app = await createHubApp({ hub, mutationToken });
+
+  const server = createAdaptorServer({
+    fetch: app.fetch,
+    hostname: host
+  }) as Server;
+  const wss = setupHubWebSocket(server, hub);
+  await listenOnHost(server, wss, host, port);
+
+  const url = `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${port}`;
+
+  if (options.openBrowser !== false) {
+    const entries = await hub.registry.list();
+    const deepLink = entries.length > 0 ? `${url}/?workspace=${entries[0].id}` : url;
+    await open(deepLink);
+  }
+
+  const dummyProcessManager = new ProcessManager();
+
+  return {
+    url,
+    port,
+    host,
+    hub,
+    processManager: dummyProcessManager,
+    close: async () => {
+      hub.killAll();
+      await closeWebSocketServer(wss);
+      await closeHttpServer(server);
+    }
+  };
+}
+
+// Legacy single-project server (used by old tests)
 export async function startDevSurfaceServer(options: {
   projectRoot: string;
   port?: number;
   openBrowser?: boolean;
 }): Promise<DevSurfaceServer> {
-  assertLocalHost(HOST);
+  const host = initializeListenHost();
   const port = options.port ?? DEFAULT_PORT;
+  const hub = new Hub();
+  hub.attachCleanupHandlers();
+
+  await hub.registry.add(options.projectRoot);
   const processManager = new ProcessManager();
   processManager.attachCleanupHandlers();
+
   const app = await createApp({
     projectRoot: options.projectRoot,
     processManager
@@ -184,13 +245,12 @@ export async function startDevSurfaceServer(options: {
 
   const server = createAdaptorServer({
     fetch: app.fetch,
-    hostname: HOST
+    hostname: host
   }) as Server;
   const wss = setupWebSocket(server, processManager);
-  await listenOnLocalHost(server, wss, port);
-  processManager.attachCleanupHandlers();
+  await listenOnHost(server, wss, host, port);
 
-  const url = `http://${HOST}:${port}`;
+  const url = `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${port}`;
 
   if (options.openBrowser !== false) {
     await open(url);
@@ -199,9 +259,12 @@ export async function startDevSurfaceServer(options: {
   return {
     url,
     port,
+    host,
+    hub,
     processManager,
     close: async () => {
       processManager.killAll();
+      hub.killAll();
       await closeWebSocketServer(wss);
       await closeHttpServer(server);
     }

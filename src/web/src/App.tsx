@@ -11,9 +11,16 @@ import {
 } from './autoOpen';
 import { useProject } from './hooks/useProject';
 import { useSocket } from './hooks/useSocket';
+import { useWorkspace } from './hooks/useWorkspace';
 import { getDashboardShortcut, type DashboardShortcutView } from './keyboardShortcuts';
-import { mutationHeaders } from './mutation';
-import type { DoctorWarning, ManagedProcessSnapshot, ProcessLogEvent, ScanResult } from './types';
+import { mutationHeaders, apiPrefix } from './mutation';
+import type {
+  DoctorWarning,
+  ManagedProcessSnapshot,
+  ProcessLogEvent,
+  ScanResult,
+  WorkspaceSummary
+} from './types';
 
 type DockerAction = 'start' | 'stop' | 'logs';
 
@@ -198,6 +205,7 @@ function createPendingAppWindow(): Window | null {
   try {
     const appWindow = window.open('', '_blank');
     if (appWindow !== null) {
+      appWindow.opener = null;
       appWindow.document.title = 'Starting local app';
       const main = appWindow.document.createElement('main');
       main.style.font = '14px system-ui';
@@ -1908,9 +1916,72 @@ function SectionPage({
   );
 }
 
+function WorkspaceSwitcher({
+  workspaces,
+  activeId,
+  onSwitch
+}: {
+  workspaces: WorkspaceSummary[];
+  activeId: string | null;
+  onSwitch: (id: string) => void;
+}) {
+  if (workspaces.length <= 1) {
+    return null;
+  }
+
+  return (
+    <div className="workspace-switcher">
+      <select
+        value={activeId ?? ''}
+        onChange={(e) => onSwitch(e.target.value)}
+        aria-label="Switch workspace"
+      >
+        {workspaces.map((ws) => (
+          <option key={ws.id} value={ws.id}>
+            {ws.name} {ws.runningProcesses > 0 ? `(${ws.runningProcesses} running)` : ''}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function HubOverview({
+  workspaces,
+  onSwitch
+}: {
+  workspaces: WorkspaceSummary[];
+  onSwitch: (id: string) => void;
+}) {
+  return (
+    <div className="hub-overview">
+      <h2>Workspaces</h2>
+      {workspaces.length === 0 ? (
+        <p className="empty">
+          No workspaces registered. Run <code>devsurface workspace add</code> or{' '}
+          <code>npx devsurface</code> inside a project.
+        </p>
+      ) : (
+        <div className="hub-workspace-grid">
+          {workspaces.map((ws) => (
+            <button key={ws.id} className="hub-workspace-card" onClick={() => onSwitch(ws.id)}>
+              <strong>{ws.name}</strong>
+              <span className="hub-workspace-path">{ws.path}</span>
+              <span className="hub-workspace-meta">
+                {ws.runningProcesses > 0 ? `${ws.runningProcesses} running` : 'idle'}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
-  const projectState = useProject();
-  const socket = useSocket();
+  const workspaceState = useWorkspace();
+  const projectState = useProject(workspaceState.activeId);
+  const socket = useSocket(workspaceState.activeId);
   const [lastRefreshed, setLastRefreshed] = useState(() => new Date());
   const [selectedScript, setSelectedScript] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<ActiveView>('overview');
@@ -1984,6 +2055,8 @@ export default function App() {
     setLastRefreshed(new Date());
   }
 
+  const wsPrefix = apiPrefix(workspaceState.activeId);
+
   async function postDashboardAction(pathname: string): Promise<boolean> {
     const response = await fetch(pathname, {
       method: 'POST',
@@ -1993,7 +2066,7 @@ export default function App() {
   }
 
   async function openTerminal(): Promise<void> {
-    const opened = await postDashboardAction('/api/open/terminal').catch(() => false);
+    const opened = await postDashboardAction(`${wsPrefix}/open/terminal`).catch(() => false);
     setDrawer(null);
     if (!opened) {
       window.alert('Unable to open a terminal from this platform.');
@@ -2001,7 +2074,7 @@ export default function App() {
   }
 
   async function openFolder(): Promise<void> {
-    const opened = await postDashboardAction('/api/open/folder').catch(() => false);
+    const opened = await postDashboardAction(`${wsPrefix}/open/folder`).catch(() => false);
     setDrawer(null);
     if (!opened) {
       window.alert('Unable to open the project folder.');
@@ -2009,7 +2082,7 @@ export default function App() {
   }
 
   async function viewPackageJson(): Promise<void> {
-    const opened = await postDashboardAction('/api/open/package').catch(() => false);
+    const opened = await postDashboardAction(`${wsPrefix}/open/package`).catch(() => false);
     setDrawer(null);
     if (!opened) {
       window.alert('Unable to open package.json.');
@@ -2024,7 +2097,7 @@ export default function App() {
       return;
     }
 
-    const started = await postDashboardAction('/api/install').catch(() => false);
+    const started = await postDashboardAction(`${wsPrefix}/install`).catch(() => false);
     await refreshProject();
     setDrawer(null);
     if (started) {
@@ -2053,7 +2126,7 @@ export default function App() {
     const pendingAppWindow = shouldAutoOpen ? createPendingAppWindow() : null;
 
     try {
-      const response = await fetch(`/api/run/${encodeURIComponent(script)}`, {
+      const response = await fetch(`${wsPrefix}/run/${encodeURIComponent(script)}`, {
         method: 'POST',
         headers: await mutationHeaders()
       });
@@ -2089,7 +2162,7 @@ export default function App() {
       }
     }
 
-    const response = await fetch(`/api/commands/${encodeURIComponent(name)}`, {
+    const response = await fetch(`${wsPrefix}/commands/${encodeURIComponent(name)}`, {
       method: 'POST',
       headers: await mutationHeaders()
     });
@@ -2100,7 +2173,7 @@ export default function App() {
   }
 
   async function stopProcess(pid: string): Promise<void> {
-    await fetch(`/api/run/${encodeURIComponent(pid)}`, {
+    await fetch(`${wsPrefix}/run/${encodeURIComponent(pid)}`, {
       method: 'DELETE',
       headers: await mutationHeaders()
     });
@@ -2115,7 +2188,7 @@ export default function App() {
       return;
     }
 
-    const response = await fetch('/api/env/copy', {
+    const response = await fetch(`${wsPrefix}/env/copy`, {
       method: 'POST',
       headers: await mutationHeaders()
     });
@@ -2144,7 +2217,7 @@ export default function App() {
     setDockerBusy({ service, action });
     setDockerError(null);
     try {
-      const response = await fetch(`/api/docker/${encodeURIComponent(service)}/${action}`, {
+      const response = await fetch(`${wsPrefix}/docker/${encodeURIComponent(service)}/${action}`, {
         method: 'POST',
         headers: await mutationHeaders()
       });
@@ -2166,7 +2239,7 @@ export default function App() {
     setDockerBusy({ service, action: 'logs' });
     setDockerError(null);
     try {
-      const response = await fetch(`/api/docker/${encodeURIComponent(service)}/logs`);
+      const response = await fetch(`${wsPrefix}/docker/${encodeURIComponent(service)}/logs`);
       if (!response.ok) {
         throw new Error(
           await dockerResponseError(response, `Unable to load Docker logs for "${service}".`)
@@ -2179,6 +2252,17 @@ export default function App() {
     } finally {
       setDockerBusy(null);
     }
+  }
+
+  if (!workspaceState.activeId && !workspaceState.loading) {
+    return (
+      <main className="app-shell loading-shell">
+        <HubOverview
+          workspaces={workspaceState.workspaces}
+          onSwitch={workspaceState.switchWorkspace}
+        />
+      </main>
+    );
   }
 
   if (projectState.loading && projectState.project === null) {
@@ -2219,7 +2303,14 @@ export default function App() {
         }}
       />
       <div className="workspace">
-        <Topbar project={projectState.project} onRefresh={refreshProject} />
+        <div className="topbar-row">
+          <WorkspaceSwitcher
+            workspaces={workspaceState.workspaces}
+            activeId={workspaceState.activeId}
+            onSwitch={workspaceState.switchWorkspace}
+          />
+          <Topbar project={projectState.project} onRefresh={refreshProject} />
+        </div>
         <div className="dashboard-frame">
           {activeView === 'overview' ? (
             <>

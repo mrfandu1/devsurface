@@ -1,0 +1,9 @@
+node_modules
+dist
+src/web/dist
+action/dist
+.git
+coverage
+tests
+*.md
+.env*

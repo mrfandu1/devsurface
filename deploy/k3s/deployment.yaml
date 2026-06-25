@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: devsurface
+  labels:
+    app: devsurface
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: devsurface
+  template:
+    metadata:
+      labels:
+        app: devsurface
+    spec:
+      containers:
+        - name: devsurface
+          image: devsurface:latest
+          ports:
+            - containerPort: 4567
+          env:
+            - name: DEVSURFACE_HOST
+              value: '0.0.0.0'
+            - name: DEVSURFACE_CONTAINER
+              value: 'true'
+            - name: DEVSURFACE_DATA_DIR
+              value: /data
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: devsurface-data

@@ -214,6 +214,19 @@ describe('api routes', () => {
     await expect(fs.access(path.join(root, '.env'))).rejects.toBeTruthy();
   });
 
+  it('does not disclose the mutation token to DNS-rebound hosts', async () => {
+    const root = await tempProject();
+    await writeJson(path.join(root, 'package.json'), {
+      name: 'session-host-check-demo',
+      scripts: {}
+    });
+    const app = await createTestApp(root);
+
+    const response = await app.request('http://evil.test:4567/api/session');
+
+    expect(response.status).toBe(403);
+  });
+
   it('runs configured commands by name from devsurface.config.json', async () => {
     const root = await tempProject();
     await writeJson(path.join(root, 'package.json'), {

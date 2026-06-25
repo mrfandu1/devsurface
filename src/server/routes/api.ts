@@ -18,7 +18,10 @@ import {
 } from '../../core/process/runner.js';
 import { runDoctor } from '../../core/doctor/index.js';
 import { scanProject } from '../../core/scanner/index.js';
-import { isAllowedLocalHostHeader, isAllowedLocalOrigin, isSameOrigin } from '../localAccess.js';
+import type { Hub } from '../../core/hub/runtime.js';
+import { DEV_SURFACE_VERSION } from '../../version.js';
+import { isAllowedLocalOrigin, isSameOrigin } from '../localAccess.js';
+import { createApiAccessMiddleware } from '../accessControl.js';
 import { hasValidMutationToken } from '../mutationToken.js';
 import { isAllowedTerminalCommand } from '../terminal.js';
 
@@ -31,8 +34,32 @@ function isAllowedMutationOrigin(requestUrl: string, origin: string | null): boo
   if (origin === null) {
     return true;
   }
-
   return isAllowedLocalOrigin(origin) && isSameOrigin(requestUrl, origin);
+}
+
+function registerMutationGuard(app: Hono, mutationToken: string): void {
+  app.use('/api/*', createApiAccessMiddleware());
+  app.use('/api/*', async (context, next) => {
+    if (context.req.method === 'GET' || context.req.method === 'HEAD') {
+      await next();
+      return;
+    }
+
+    const origin = context.req.header('origin') ?? null;
+    const secFetchSite = context.req.header('sec-fetch-site') ?? null;
+    const intent = context.req.header('x-devsurface-intent') ?? null;
+    const token = context.req.header('x-devsurface-token') ?? null;
+    if (
+      !hasMutationIntent(intent) ||
+      !hasValidMutationToken(token, mutationToken) ||
+      isCrossSiteFetch(secFetchSite) ||
+      !isAllowedMutationOrigin(context.req.url, origin)
+    ) {
+      return context.json({ error: 'Cross-origin mutation rejected.' }, 403);
+    }
+
+    await next();
+  });
 }
 
 function isCrossSiteFetch(secFetchSite: string | null): boolean {
@@ -47,7 +74,6 @@ async function realPathWithinRoot(root: string, target: string): Promise<boolean
   if (!isWithinRoot(root, target)) {
     return false;
   }
-
   try {
     const [realRoot, realTarget] = await Promise.all([fs.realpath(root), fs.realpath(target)]);
     return isWithinRoot(realRoot, realTarget);
@@ -60,7 +86,6 @@ async function writableDestinationWithinRoot(root: string, destination: string):
   if (!isWithinRoot(root, destination)) {
     return false;
   }
-
   try {
     const [realRoot, realParent] = await Promise.all([
       fs.realpath(root),
@@ -92,7 +117,6 @@ async function copyFileExclusive(
     if (code === 'EEXIST') {
       return 'exists';
     }
-
     throw error;
   } finally {
     await handle?.close();
@@ -115,19 +139,16 @@ function findExecutable(command: string): string | null {
   if (path.isAbsolute(command)) {
     return existsSync(command) ? command : null;
   }
-
   const pathValue = process.env.PATH ?? '';
   for (const directory of pathValue.split(path.delimiter)) {
     if (directory.length === 0) {
       continue;
     }
-
     const candidate = path.join(directory, command);
     if (existsSync(candidate)) {
       return candidate;
     }
   }
-
   return null;
 }
 
@@ -202,6 +223,322 @@ function openTerminalAt(root: string): boolean {
   return launchDetached(terminal.command, terminal.args, root);
 }
 
+function handleDockerError(
+  error: unknown,
+  context: { json: (data: unknown, status: number) => Response }
+): Response {
+  if (error instanceof DockerOperationError) {
+    if (error.code === 'compose-not-found' || error.code === 'service-not-found') {
+      return context.json({ error: error.message, code: error.code }, 404);
+    }
+    if (error.code === 'docker-not-installed' || error.code === 'docker-not-running') {
+      return context.json({ error: error.message, code: error.code }, 503);
+    }
+    return context.json({ error: error.message, code: error.code }, 502);
+  }
+  throw error;
+}
+
+function registerWorkspaceRoutes(
+  app: Hono,
+  resolveWorkspace: (id: string) => Promise<{
+    root: string;
+    processManager: ProcessManager;
+    dockerController: DockerController;
+  } | null>
+): void {
+  app.get('/api/workspaces/:id/project', async (context) => {
+    const ws = await resolveWorkspace(context.req.param('id'));
+    if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
+    return context.json(await scanProject(ws.root));
+  });
+
+  app.get('/api/workspaces/:id/health', async (context) => {
+    const ws = await resolveWorkspace(context.req.param('id'));
+    if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
+    return context.json(await runDoctor(ws.root));
+  });
+
+  app.get('/api/workspaces/:id/processes', async (context) => {
+    const ws = await resolveWorkspace(context.req.param('id'));
+    if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
+    return context.json(ws.processManager.list());
+  });
+
+  app.get('/api/workspaces/:id/logs', async (context) => {
+    const ws = await resolveWorkspace(context.req.param('id'));
+    if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
+    return context.json(ws.processManager.listLogs());
+  });
+
+  app.get('/api/workspaces/:id/docker/:service/logs', async (context) => {
+    const ws = await resolveWorkspace(context.req.param('id'));
+    if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
+    const service = decodeURIComponent(context.req.param('service'));
+    try {
+      return context.json(await ws.dockerController.logs(service));
+    } catch (error) {
+      return handleDockerError(error, context);
+    }
+  });
+
+  app.post('/api/workspaces/:id/docker/:service/start', async (context) => {
+    const ws = await resolveWorkspace(context.req.param('id'));
+    if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
+    const service = decodeURIComponent(context.req.param('service'));
+    try {
+      return context.json(await ws.dockerController.start(service));
+    } catch (error) {
+      return handleDockerError(error, context);
+    }
+  });
+
+  app.post('/api/workspaces/:id/docker/:service/stop', async (context) => {
+    const ws = await resolveWorkspace(context.req.param('id'));
+    if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
+    const service = decodeURIComponent(context.req.param('service'));
+    try {
+      return context.json(await ws.dockerController.stop(service));
+    } catch (error) {
+      return handleDockerError(error, context);
+    }
+  });
+
+  app.post('/api/workspaces/:id/run/:script', async (context) => {
+    const ws = await resolveWorkspace(context.req.param('id'));
+    if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
+    const script = decodeURIComponent(context.req.param('script'));
+    const scan = await scanProject(ws.root);
+    const packageScript = scan.scripts[script];
+
+    if (packageScript === undefined) {
+      return context.json({ error: `Script "${script}" was not found.` }, 404);
+    }
+    if (isDangerousCommand(packageScript)) {
+      return context.json({ error: 'Refusing to run dangerous script.' }, 403);
+    }
+
+    const command = await resolvePackageRunCommand({
+      cwd: ws.root,
+      packageManager: scan.packageManager,
+      script
+    });
+    if (command === null) {
+      return context.json({ error: 'Package manager executable was not found.' }, 503);
+    }
+
+    const processInfo = ws.processManager.start({
+      cwd: ws.root,
+      script,
+      command: command.command,
+      args: command.args,
+      displayCommand: command.displayCommand
+    });
+    return context.json({ ...processInfo, packageScript });
+  });
+
+  app.post('/api/workspaces/:id/install', async (context) => {
+    const ws = await resolveWorkspace(context.req.param('id'));
+    if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
+    const scan = await scanProject(ws.root);
+    const command = await resolvePackageInstallCommand({
+      cwd: ws.root,
+      packageManager: scan.packageManager
+    });
+    if (command === null) {
+      return context.json({ error: 'Package manager executable was not found.' }, 503);
+    }
+
+    const processInfo = ws.processManager.start({
+      cwd: ws.root,
+      script: 'install',
+      command: command.command,
+      args: command.args,
+      displayCommand: command.displayCommand
+    });
+    return context.json(processInfo);
+  });
+
+  app.post('/api/workspaces/:id/commands/:name', async (context) => {
+    const ws = await resolveWorkspace(context.req.param('id'));
+    if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
+    const name = decodeURIComponent(context.req.param('name'));
+    const scan = await scanProject(ws.root);
+    const configuredCommand = scan.config?.config.commands?.[name] ?? null;
+
+    if (configuredCommand === null) {
+      return context.json({ error: `Configured command "${name}" was not found.` }, 404);
+    }
+    if (isDangerousCommand(configuredCommand)) {
+      return context.json({ error: 'Refusing to run dangerous command.' }, 403);
+    }
+
+    const resolvedCommand = await resolveConfiguredCommand(ws.root, configuredCommand);
+    if (resolvedCommand === null) {
+      return context.json(
+        {
+          error:
+            'Configured command uses unsupported shell syntax. Use a simple executable with arguments, or move complex logic into a package.json script.'
+        },
+        400
+      );
+    }
+
+    const processInfo = ws.processManager.start({
+      cwd: ws.root,
+      script: name,
+      command: resolvedCommand.command,
+      args: resolvedCommand.args,
+      displayCommand: resolvedCommand.displayCommand
+    });
+    return context.json({ ...processInfo, configuredCommand });
+  });
+
+  app.post('/api/workspaces/:id/open/folder', async (context) => {
+    const ws = await resolveWorkspace(context.req.param('id'));
+    if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
+    await open(ws.root);
+    return context.json({ opened: true, target: 'folder' });
+  });
+
+  app.post('/api/workspaces/:id/open/package', async (context) => {
+    const ws = await resolveWorkspace(context.req.param('id'));
+    if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
+    const packagePath = path.join(ws.root, 'package.json');
+    if (!(await realPathWithinRoot(ws.root, packagePath))) {
+      return context.json({ error: 'package.json was not found inside the project root.' }, 404);
+    }
+    await open(packagePath);
+    return context.json({ opened: true, target: 'package' });
+  });
+
+  app.post('/api/workspaces/:id/open/terminal', async (context) => {
+    const ws = await resolveWorkspace(context.req.param('id'));
+    if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
+    const opened = openTerminalAt(ws.root);
+    return context.json({ opened, target: 'terminal' }, opened ? 200 : 501);
+  });
+
+  app.post('/api/workspaces/:id/env/copy', async (context) => {
+    const ws = await resolveWorkspace(context.req.param('id'));
+    if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
+    const scan = await scanProject(ws.root);
+    const examplePath = scan.env?.examplePath ?? null;
+    const localPath = scan.env?.localPath ?? null;
+
+    if (examplePath === null) {
+      return context.json({ error: '.env.example was not found.' }, 404);
+    }
+
+    const destination = localPath ?? path.join(ws.root, scan.config?.config.env?.local ?? '.env');
+    if (
+      !(await realPathWithinRoot(ws.root, examplePath)) ||
+      !(await writableDestinationWithinRoot(ws.root, destination))
+    ) {
+      return context.json({ error: 'Refusing to copy env files outside the project root.' }, 400);
+    }
+
+    const copyResult = await copyFileExclusive(examplePath, destination);
+    if (copyResult === 'exists') {
+      return context.json({ error: '.env already exists.' }, 409);
+    }
+    return context.json({ copied: true });
+  });
+
+  app.delete('/api/workspaces/:id/run/:pid', async (context) => {
+    const ws = await resolveWorkspace(context.req.param('id'));
+    if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
+    const pid = decodeURIComponent(context.req.param('pid'));
+    const stopped = ws.processManager.stop(pid);
+    return context.json({ stopped });
+  });
+}
+
+export function registerHubApiRoutes(
+  app: Hono,
+  options: {
+    hub: Hub;
+    mutationToken: string;
+  }
+): void {
+  const { hub } = options;
+  registerMutationGuard(app, options.mutationToken);
+
+  async function resolveWorkspace(id: string) {
+    const entry = await hub.registry.resolve(id);
+    if (!entry) return null;
+    const runtime = hub.ensure(entry);
+    return {
+      root: runtime.root,
+      processManager: runtime.processManager,
+      dockerController: runtime.dockerController
+    };
+  }
+
+  app.get('/api/session', (context) => {
+    return context.json({ token: options.mutationToken });
+  });
+
+  app.get('/api/hub/status', (context) => {
+    return context.json({ status: 'running', version: DEV_SURFACE_VERSION });
+  });
+
+  app.get('/api/workspaces', async (context) => {
+    return context.json(await hub.listSummaries());
+  });
+
+  app.post('/api/workspaces', async (context) => {
+    const body = await context.req.json<{ path: string }>().catch(() => null);
+    if (!body?.path) {
+      return context.json({ error: 'path is required.' }, 400);
+    }
+    try {
+      const entry = await hub.registry.add(body.path);
+      return context.json(entry, 201);
+    } catch (error) {
+      return context.json({ error: error instanceof Error ? error.message : 'Invalid path.' }, 400);
+    }
+  });
+
+  app.delete('/api/workspaces/:id', async (context) => {
+    const id = context.req.param('id');
+    const runtime = hub.get(id);
+    if (runtime) {
+      runtime.processManager.killAll();
+    }
+    const removed = await hub.registry.remove(id);
+    return context.json({ removed }, removed ? 200 : 404);
+  });
+
+  registerWorkspaceRoutes(app, resolveWorkspace);
+
+  // Backward-compatible single-project aliases: proxy to the first workspace
+  app.get('/api/project', async (context) => {
+    const entries = await hub.registry.list();
+    if (entries.length === 0) return context.json({ error: 'No workspaces registered.' }, 404);
+    return context.json(await scanProject(hub.ensure(entries[0]).root));
+  });
+
+  app.get('/api/health', async (context) => {
+    const entries = await hub.registry.list();
+    if (entries.length === 0) return context.json({ error: 'No workspaces registered.' }, 404);
+    return context.json(await runDoctor(hub.ensure(entries[0]).root));
+  });
+
+  app.get('/api/processes', async (context) => {
+    const entries = await hub.registry.list();
+    if (entries.length === 0) return context.json([]);
+    return context.json(hub.ensure(entries[0]).processManager.list());
+  });
+
+  app.get('/api/logs', async (context) => {
+    const entries = await hub.registry.list();
+    if (entries.length === 0) return context.json([]);
+    return context.json(hub.ensure(entries[0]).processManager.listLogs());
+  });
+}
+
+// Legacy single-project API for backward compatibility with tests
 export function registerApiRoutes(
   app: Hono,
   options: {
@@ -213,33 +550,14 @@ export function registerApiRoutes(
 ): void {
   const dockerController =
     options.dockerController ?? new DockerComposeController(options.projectRoot);
+  registerMutationGuard(app, options.mutationToken);
 
   app.get('/api/session', (context) => {
     return context.json({ token: options.mutationToken });
   });
 
-  app.use('/api/*', async (context, next) => {
-    const host = context.req.header('host') ?? new URL(context.req.url).host;
-    if (!isAllowedLocalHostHeader(host)) {
-      return context.json({ error: 'Non-local host rejected.' }, 403);
-    }
-
-    if (context.req.method !== 'GET' && context.req.method !== 'HEAD') {
-      const origin = context.req.header('origin') ?? null;
-      const secFetchSite = context.req.header('sec-fetch-site') ?? null;
-      const intent = context.req.header('x-devsurface-intent') ?? null;
-      const token = context.req.header('x-devsurface-token') ?? null;
-      if (
-        !hasMutationIntent(intent) ||
-        !hasValidMutationToken(token, options.mutationToken) ||
-        isCrossSiteFetch(secFetchSite) ||
-        !isAllowedMutationOrigin(context.req.url, origin)
-      ) {
-        return context.json({ error: 'Cross-origin mutation rejected.' }, 403);
-      }
-    }
-
-    await next();
+  app.get('/api/hub/status', (context) => {
+    return context.json({ status: 'running', version: DEV_SURFACE_VERSION });
   });
 
   app.get('/api/project', async (context) => {
@@ -263,16 +581,7 @@ export function registerApiRoutes(
     try {
       return context.json(await dockerController.logs(service));
     } catch (error) {
-      if (error instanceof DockerOperationError) {
-        if (error.code === 'compose-not-found' || error.code === 'service-not-found') {
-          return context.json({ error: error.message, code: error.code }, 404);
-        }
-        if (error.code === 'docker-not-installed' || error.code === 'docker-not-running') {
-          return context.json({ error: error.message, code: error.code }, 503);
-        }
-        return context.json({ error: error.message, code: error.code }, 502);
-      }
-      throw error;
+      return handleDockerError(error, context);
     }
   });
 
@@ -281,16 +590,7 @@ export function registerApiRoutes(
     try {
       return context.json(await dockerController.start(service));
     } catch (error) {
-      if (error instanceof DockerOperationError) {
-        if (error.code === 'compose-not-found' || error.code === 'service-not-found') {
-          return context.json({ error: error.message, code: error.code }, 404);
-        }
-        if (error.code === 'docker-not-installed' || error.code === 'docker-not-running') {
-          return context.json({ error: error.message, code: error.code }, 503);
-        }
-        return context.json({ error: error.message, code: error.code }, 502);
-      }
-      throw error;
+      return handleDockerError(error, context);
     }
   });
 
@@ -299,16 +599,7 @@ export function registerApiRoutes(
     try {
       return context.json(await dockerController.stop(service));
     } catch (error) {
-      if (error instanceof DockerOperationError) {
-        if (error.code === 'compose-not-found' || error.code === 'service-not-found') {
-          return context.json({ error: error.message, code: error.code }, 404);
-        }
-        if (error.code === 'docker-not-installed' || error.code === 'docker-not-running') {
-          return context.json({ error: error.message, code: error.code }, 503);
-        }
-        return context.json({ error: error.message, code: error.code }, 502);
-      }
-      throw error;
+      return handleDockerError(error, context);
     }
   });
 
@@ -320,7 +611,6 @@ export function registerApiRoutes(
     if (packageScript === undefined) {
       return context.json({ error: `Script "${script}" was not found.` }, 404);
     }
-
     if (isDangerousCommand(packageScript)) {
       return context.json({ error: 'Refusing to run dangerous script.' }, 403);
     }
@@ -341,11 +631,7 @@ export function registerApiRoutes(
       args: command.args,
       displayCommand: command.displayCommand
     });
-
-    return context.json({
-      ...processInfo,
-      packageScript
-    });
+    return context.json({ ...processInfo, packageScript });
   });
 
   app.post('/api/install', async (context) => {
@@ -365,7 +651,6 @@ export function registerApiRoutes(
       args: command.args,
       displayCommand: command.displayCommand
     });
-
     return context.json(processInfo);
   });
 
@@ -377,7 +662,6 @@ export function registerApiRoutes(
     if (configuredCommand === null) {
       return context.json({ error: `Configured command "${name}" was not found.` }, 404);
     }
-
     if (isDangerousCommand(configuredCommand)) {
       return context.json({ error: 'Refusing to run dangerous command.' }, 403);
     }
@@ -400,11 +684,7 @@ export function registerApiRoutes(
       args: resolvedCommand.args,
       displayCommand: resolvedCommand.displayCommand
     });
-
-    return context.json({
-      ...processInfo,
-      configuredCommand
-    });
+    return context.json({ ...processInfo, configuredCommand });
   });
 
   app.post('/api/open/folder', async (context) => {
@@ -417,7 +697,6 @@ export function registerApiRoutes(
     if (!(await realPathWithinRoot(options.projectRoot, packagePath))) {
       return context.json({ error: 'package.json was not found inside the project root.' }, 404);
     }
-
     await open(packagePath);
     return context.json({ opened: true, target: 'package' });
   });
@@ -449,7 +728,6 @@ export function registerApiRoutes(
     if (copyResult === 'exists') {
       return context.json({ error: '.env already exists.' }, 409);
     }
-
     return context.json({ copied: true });
   });
 

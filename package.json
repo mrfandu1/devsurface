@@ -1,6 +1,6 @@
 {
   "name": "devsurface",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Turn any Node.js repository into a local developer control panel.",
   "type": "module",
   "license": "MIT",
@@ -14,7 +14,7 @@
   },
   "homepage": "https://github.com/mrfandu1/devsurface#readme",
   "bin": {
-    "devsurface": "./dist/cli/index.js"
+    "devsurface": "dist/cli/index.js"
   },
   "files": [
     "dist",

@@ -8,10 +8,14 @@ src/web/dist/
 !.env.example
 .DS_Store
 npm-debug.log*
+npm-login*.log
 pnpm-debug.log*
 yarn-error.log*
 coverage/
+output/
 .devsurface-ui*.log
+.codegraph/
+.demo/
 
 # Local-only planning and private security notes
 devsurface_PLAN.md

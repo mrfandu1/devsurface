@@ -1,0 +1,21 @@
+services:
+  devsurface:
+    build: .
+    ports:
+      - '127.0.0.1:4567:4567'
+    volumes:
+      - devsurface-data:/data
+      # Mount project directories here:
+      # - /path/to/project-a:/workspaces/project-a:rw
+      # - /path/to/project-b:/workspaces/project-b:rw
+    environment:
+      DEVSURFACE_DATA_DIR: /data
+      DEVSURFACE_HOST: '0.0.0.0'
+      DEVSURFACE_CONTAINER: 'true'
+      # Pre-register workspace paths (container-internal):
+      # DEVSURFACE_WORKSPACES: /workspaces/project-a,/workspaces/project-b
+      # Restrict API registration to mounted project roots:
+      # DEVSURFACE_WORKSPACE_ROOTS: /workspaces
+
+volumes:
+  devsurface-data:

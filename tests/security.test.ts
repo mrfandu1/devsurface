@@ -4,6 +4,15 @@ import { isDangerousCommand } from '../src/core/security/dangerousCommand.js';
 import { safeDisplayText } from '../src/core/security/text.js';
 import { isSafeHttpUrl } from '../src/core/security/url.js';
 import { createMutationToken, hasValidMutationToken } from '../src/server/mutationToken.js';
+import {
+  isAllowedClientConnection,
+  isAllowedRemoteAddress,
+  isLoopbackRemoteAddress,
+  isPrivateRemoteAddress,
+  resolveHost,
+  resetListenHost,
+  setListenHost
+} from '../src/server/listenConfig.js';
 import { isAllowedTerminalCommand } from '../src/server/terminal.js';
 
 describe('security helpers', () => {
@@ -50,5 +59,110 @@ describe('security helpers', () => {
     expect(isAllowedTerminalCommand('../../bin/sh')).toBe(false);
     expect(isAllowedTerminalCommand('evil;rm')).toBe(false);
     expect(isAllowedTerminalCommand('my term')).toBe(false);
+  });
+
+  it('allows loopback clients when bound to localhost', () => {
+    setListenHost('127.0.0.1');
+    expect(isLoopbackRemoteAddress('127.0.0.1')).toBe(true);
+    expect(isLoopbackRemoteAddress('::ffff:127.0.0.1')).toBe(true);
+    expect(isAllowedRemoteAddress('8.8.8.8', '127.0.0.1')).toBe(false);
+    expect(isAllowedClientConnection('127.0.0.1', '127.0.0.1')).toBe(true);
+    resetListenHost();
+  });
+
+  it('allows only private-network clients when bound to all interfaces', () => {
+    setListenHost('0.0.0.0');
+    expect(isPrivateRemoteAddress('172.17.0.1')).toBe(true);
+    expect(isAllowedRemoteAddress('203.0.113.10', '0.0.0.0')).toBe(false);
+    expect(isAllowedRemoteAddress('10.0.0.5', '0.0.0.0')).toBe(true);
+    resetListenHost();
+  });
+
+  it('rejects all-interface binding outside the container runtime', () => {
+    const previousHost = process.env.DEVSURFACE_HOST;
+    const previousContainer = process.env.DEVSURFACE_CONTAINER;
+    process.env.DEVSURFACE_HOST = '0.0.0.0';
+    delete process.env.DEVSURFACE_CONTAINER;
+
+    try {
+      expect(() => resolveHost()).toThrow('All-interface');
+    } finally {
+      if (previousHost === undefined) {
+        delete process.env.DEVSURFACE_HOST;
+      } else {
+        process.env.DEVSURFACE_HOST = previousHost;
+      }
+      if (previousContainer === undefined) {
+        delete process.env.DEVSURFACE_CONTAINER;
+      } else {
+        process.env.DEVSURFACE_CONTAINER = previousContainer;
+      }
+    }
+  });
+
+  it('rejects explicit non-loopback interface binding', () => {
+    const previousHost = process.env.DEVSURFACE_HOST;
+    const previousContainer = process.env.DEVSURFACE_CONTAINER;
+    process.env.DEVSURFACE_HOST = '192.168.1.20';
+    delete process.env.DEVSURFACE_CONTAINER;
+
+    try {
+      expect(() => resolveHost()).toThrow('loopback');
+    } finally {
+      if (previousHost === undefined) {
+        delete process.env.DEVSURFACE_HOST;
+      } else {
+        process.env.DEVSURFACE_HOST = previousHost;
+      }
+      if (previousContainer === undefined) {
+        delete process.env.DEVSURFACE_CONTAINER;
+      } else {
+        process.env.DEVSURFACE_CONTAINER = previousContainer;
+      }
+    }
+  });
+
+  it('keeps non-loopback interface binding rejected inside containers', () => {
+    const previousHost = process.env.DEVSURFACE_HOST;
+    const previousContainer = process.env.DEVSURFACE_CONTAINER;
+    process.env.DEVSURFACE_HOST = '192.168.1.20';
+    process.env.DEVSURFACE_CONTAINER = 'true';
+
+    try {
+      expect(() => resolveHost()).toThrow('loopback');
+    } finally {
+      if (previousHost === undefined) {
+        delete process.env.DEVSURFACE_HOST;
+      } else {
+        process.env.DEVSURFACE_HOST = previousHost;
+      }
+      if (previousContainer === undefined) {
+        delete process.env.DEVSURFACE_CONTAINER;
+      } else {
+        process.env.DEVSURFACE_CONTAINER = previousContainer;
+      }
+    }
+  });
+
+  it('allows all-interface binding inside the container runtime', () => {
+    const previousHost = process.env.DEVSURFACE_HOST;
+    const previousContainer = process.env.DEVSURFACE_CONTAINER;
+    process.env.DEVSURFACE_HOST = '0.0.0.0';
+    process.env.DEVSURFACE_CONTAINER = 'true';
+
+    try {
+      expect(resolveHost()).toBe('0.0.0.0');
+    } finally {
+      if (previousHost === undefined) {
+        delete process.env.DEVSURFACE_HOST;
+      } else {
+        process.env.DEVSURFACE_HOST = previousHost;
+      }
+      if (previousContainer === undefined) {
+        delete process.env.DEVSURFACE_CONTAINER;
+      } else {
+        process.env.DEVSURFACE_CONTAINER = previousContainer;
+      }
+    }
   });
 });

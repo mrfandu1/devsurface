@@ -96,3 +96,11 @@ export interface ProcessLogEvent {
   message: string;
   timestamp: string;
 }
+
+export interface WorkspaceSummary {
+  id: string;
+  name: string;
+  path: string;
+  addedAt: string;
+  runningProcesses: number;
+}

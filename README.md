@@ -57,7 +57,9 @@ new contributor can see what is missing before guessing in the terminal.
 
 DevSurface is local-first:
 
-- The server binds to `127.0.0.1`.
+- Local runs bind to `127.0.0.1`.
+- Docker and k3s runs bind inside the container and are meant to be exposed with
+  local port mappings or `kubectl port-forward`.
 - No accounts, cloud sync, telemetry, or analytics.
 - `.env` values are never displayed.
 - Commands are shown before they run.
@@ -109,13 +111,52 @@ Run DevSurface without installing it globally:
 | npm     | `npx devsurface`  |
 | Bun     | `bunx devsurface` |
 
-| Command                   | Description                                                          |
-| ------------------------- | -------------------------------------------------------------------- |
-| `devsurface`              | Scan the current project, start the dashboard, and open the browser. |
-| `devsurface scan`         | Print detected project information to the terminal.                  |
-| `devsurface doctor`       | Print setup and repo health warnings.                                |
-| `devsurface init`         | Create a starter `devsurface.config.json`.                           |
-| `devsurface run <script>` | Run a package script and stream output.                              |
+| Command                            | Description                                                          |
+| ---------------------------------- | -------------------------------------------------------------------- |
+| `devsurface`                       | Scan the current project, start the dashboard, and open the browser. |
+| `devsurface scan`                  | Print detected project information to the terminal.                  |
+| `devsurface doctor`                | Print setup and repo health warnings.                                |
+| `devsurface init`                  | Create a starter `devsurface.config.json`.                           |
+| `devsurface run <script>`          | Run a package script and stream output.                              |
+| `devsurface serve`                 | Start the multi-workspace hub server.                                |
+| `devsurface workspace add [path]`  | Register a project directory with the local hub.                     |
+| `devsurface workspace list`        | List registered hub workspaces.                                      |
+| `devsurface workspace remove <id>` | Remove a workspace from the hub registry.                            |
+
+## Multi-Workspace Hub
+
+DevSurface now runs as a local hub. One server can serve several project
+directories, each with isolated process state, Docker controls, logs, and scanner
+results.
+
+Start or attach from any project:
+
+```bash
+npx devsurface
+```
+
+Run a persistent hub:
+
+```bash
+npx devsurface serve --no-open
+```
+
+Register workspaces manually:
+
+```bash
+npx devsurface workspace add /path/to/project-a
+npx devsurface workspace add /path/to/project-b
+npx devsurface workspace list
+```
+
+Container and k3s deployments are included for local-cluster use:
+
+- `Dockerfile`
+- `docker-compose.hub.yml`
+- `deploy/k3s/`
+
+Container deployments bind inside the container. Keep host port mappings local,
+for example `127.0.0.1:4567:4567`, or use `kubectl port-forward` for k3s.
 
 ## GitHub Action
 
@@ -244,8 +285,9 @@ works for the repo:
 
 DevSurface is designed for local development.
 
-- The dashboard server is restricted to `127.0.0.1`.
-- Mutating API routes require dashboard intent headers.
+- Local dashboard servers bind to loopback hosts.
+- Container deployments use `DEVSURFACE_CONTAINER=true`.
+- Workspace registration can be limited with `DEVSURFACE_WORKSPACE_ROOTS`.
 - `.env` values are never returned by scanners, API routes, CLI output, or UI panels.
 - Dashboard command runs show the exact command string first.
 - Docker service start and stop actions show the exact Compose command before running.

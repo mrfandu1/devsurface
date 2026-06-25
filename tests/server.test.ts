@@ -2,8 +2,10 @@ import net from 'node:net';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { HOST, startDevSurfaceServer } from '../src/server/index.js';
+import { DEFAULT_HOST, startDevSurfaceServer } from '../src/server/index.js';
 import type { DevSurfaceServer } from '../src/server/index.js';
+
+const HOST = DEFAULT_HOST;
 import { makeTempProject, removeTempProject, writeJson } from './testUtils.js';
 
 const tempProjects: string[] = [];

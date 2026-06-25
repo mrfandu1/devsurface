@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ManagedProcessSnapshot, ProcessLogEvent } from '../types';
+import { readWorkspaceCache, writeWorkspaceCache } from '../workspaceCache';
 
 type SocketState = 'connecting' | 'open' | 'closed';
 
@@ -9,16 +10,30 @@ interface SocketPayload {
   process?: ManagedProcessSnapshot;
   processes?: ManagedProcessSnapshot[];
   logs?: ProcessLogEvent[];
+  workspace?: string;
 }
 
-export function useSocket() {
+export function useSocket(workspaceId: string | null) {
+  const cached = readWorkspaceCache(workspaceId);
   const [connection, setConnection] = useState<SocketState>('connecting');
-  const [logs, setLogs] = useState<ProcessLogEvent[]>([]);
-  const [processes, setProcesses] = useState<ManagedProcessSnapshot[]>([]);
+  const [logs, setLogs] = useState<ProcessLogEvent[]>(cached.logs);
+  const [processes, setProcesses] = useState<ManagedProcessSnapshot[]>(cached.processes);
 
   useEffect(() => {
+    if (!workspaceId) {
+      setConnection('closed');
+      return;
+    }
+
+    const nextCached = readWorkspaceCache(workspaceId);
+    setConnection('connecting');
+    setLogs(nextCached.logs);
+    setProcesses(nextCached.processes);
+
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const socket = new WebSocket(`${protocol}//${window.location.host}/ws`);
+    const socket = new WebSocket(
+      `${protocol}//${window.location.host}/ws?workspace=${encodeURIComponent(workspaceId)}`
+    );
 
     socket.addEventListener('open', () => {
       setConnection('open');
@@ -32,12 +47,21 @@ export function useSocket() {
       const payload = JSON.parse(String(message.data)) as SocketPayload;
 
       if (payload.type === 'hello' && payload.processes) {
+        const helloLogs = payload.logs?.slice(-500) ?? [];
         setProcesses(payload.processes);
-        setLogs(payload.logs?.slice(-500) ?? []);
+        setLogs(helloLogs);
+        writeWorkspaceCache(workspaceId, {
+          processes: payload.processes,
+          logs: helloLogs
+        });
       }
 
       if (payload.type === 'log' && payload.event) {
-        setLogs((current) => [...current, payload.event as ProcessLogEvent].slice(-500));
+        setLogs((current) => {
+          const next = [...current, payload.event as ProcessLogEvent].slice(-500);
+          writeWorkspaceCache(workspaceId, { logs: next });
+          return next;
+        });
       }
 
       if (payload.type === 'process' && payload.process) {
@@ -47,7 +71,9 @@ export function useSocket() {
             (payload.process as ManagedProcessSnapshot).pid,
             payload.process as ManagedProcessSnapshot
           );
-          return Array.from(map.values());
+          const next = Array.from(map.values());
+          writeWorkspaceCache(workspaceId, { processes: next });
+          return next;
         });
       }
     });
@@ -55,7 +81,7 @@ export function useSocket() {
     return () => {
       socket.close();
     };
-  }, []);
+  }, [workspaceId]);
 
   return {
     connection,

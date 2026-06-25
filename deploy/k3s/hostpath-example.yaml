@@ -1,0 +1,29 @@
+# Example: mount host project directories into the DevSurface pod.
+# Apply as a strategic merge patch or overlay.
+#
+# Usage:
+#   1. Edit paths below to match your local project directories.
+#   2. Set DEVSURFACE_WORKSPACES to the container-internal paths.
+#   3. kubectl apply -k deploy/k3s/ && kubectl apply -f deploy/k3s/hostpath-example.yaml
+#   4. kubectl port-forward svc/devsurface 4567:4567
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: devsurface
+spec:
+  template:
+    spec:
+      containers:
+        - name: devsurface
+          volumeMounts:
+            - name: project-a
+              mountPath: /workspaces/project-a
+          env:
+            - name: DEVSURFACE_WORKSPACES
+              value: '/workspaces/project-a'
+      volumes:
+        - name: project-a
+          hostPath:
+            path: /home/user/projects/my-app
+            type: Directory

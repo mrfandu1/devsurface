@@ -15,3 +15,7 @@ export async function mutationHeaders(): Promise<Record<string, string>> {
     'X-DevSurface-Token': cachedToken
   };
 }
+
+export function apiPrefix(workspaceId: string | null): string {
+  return workspaceId ? `/api/workspaces/${encodeURIComponent(workspaceId)}` : '/api';
+}

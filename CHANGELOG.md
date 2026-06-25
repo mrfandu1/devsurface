@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.4.0
+
+- Added multi-workspace Hub mode: one DevSurface instance serves multiple project
+  directories. Run `npx devsurface` in any project to attach it to a running hub.
+- Added `devsurface serve` command for running the hub as a persistent background
+  server, Docker container, or k3s pod.
+- Added `devsurface workspace add|list|remove` commands for managing registered
+  workspaces from the CLI.
+- Added workspace switcher and Hub overview page in the dashboard for comparing
+  projects at a glance.
+- Added workspace-scoped API routes under `/api/workspaces/:id/*` with backward-
+  compatible aliases for single-project setups.
+- Added workspace-scoped WebSocket connections via `?workspace=<id>` query parameter.
+- Added Dockerfile, docker-compose.hub.yml, and deploy/k3s/ Kubernetes manifests
+  for containerized and local-cluster deployments.
+- Added `DEVSURFACE_HOST`, `DEVSURFACE_CONTAINER`, `DEVSURFACE_DATA_DIR`,
+  `DEVSURFACE_WORKSPACES`, and `DEVSURFACE_WORKSPACE_ROOTS` environment variables
+  for container and workspace-root configuration.
+- Kept per-project `devsurface.config.json` unchanged; existing single-project
+  workflows auto-register on first run.
+- Added workspace-root configuration for deployments that should only register
+  projects from mounted directories.
+
 ## 0.3.0
 
 - Added the reusable `mrfandu1/devsurface@v0` GitHub Action.
