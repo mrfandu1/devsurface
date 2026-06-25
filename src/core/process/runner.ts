@@ -227,3 +227,29 @@ export async function runPackageScriptToTerminal(options: {
     });
   });
 }
+
+export async function runConfiguredCommandToTerminal(options: {
+  cwd: string;
+  command: string;
+}): Promise<number> {
+  const resolvedCommand = await resolveConfiguredCommand(options.cwd, options.command);
+  if (resolvedCommand === null) {
+    return 1;
+  }
+
+  return await new Promise((resolve) => {
+    const child = spawn(resolvedCommand.command, resolvedCommand.args, {
+      cwd: options.cwd,
+      stdio: 'inherit',
+      windowsHide: true
+    });
+
+    child.on('error', () => {
+      resolve(1);
+    });
+
+    child.on('close', (code) => {
+      resolve(code ?? 1);
+    });
+  });
+}

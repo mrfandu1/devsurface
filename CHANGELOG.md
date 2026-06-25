@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0
+
+- Added framework presets for Next.js, Vite, Express, Fastify, NestJS, Remix, and Prisma.
+- Added detected preset commands and ports to the dashboard and command API.
+- Added Python project detection for `requirements.txt`, `pyproject.toml`, and `Pipfile`, including FastAPI/Uvicorn, Flask, and Django commands.
+- Added Go project detection from `go.mod`, with run, build, and test commands.
+- Added Java project detection from Maven and Gradle build files, with build and test commands.
+- Updated doctor checks so detected Python, Go, and Java projects are not treated as broken Node.js projects.
+
 ## 0.4.0
 
 - Added multi-workspace Hub mode: one DevSurface instance serves multiple project

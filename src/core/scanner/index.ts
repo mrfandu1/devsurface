@@ -6,9 +6,11 @@ import { detectDocker } from './docker.js';
 import { detectEnv } from './env.js';
 import { detectFramework } from './framework.js';
 import { detectGit } from './git.js';
+import { detectProjectLanguage } from './language.js';
 import { detectPackageManager } from './packageManager.js';
 import { readPackageJson } from './packageJson.js';
 import { defaultPortsForFramework, detectPorts, inferPortsFromScripts } from './ports.js';
+import { detectPresets, mergePresetCommands, mergePresetGroups } from './presets.js';
 import { extractScripts } from './scripts.js';
 
 function isWithinRoot(root: string, target: string): boolean {
@@ -44,10 +46,20 @@ export async function scanProject(root = process.cwd()): Promise<ScanResult> {
   const packageJson = await readPackageJson(resolvedRoot);
   const scripts = extractScripts(packageJson) ?? {};
   const framework = detectFramework(packageJson);
+  const language = await detectProjectLanguage(resolvedRoot, packageJson);
+  const presets = await detectPresets({
+    root: resolvedRoot,
+    packageJson,
+    framework,
+    language
+  });
+  const presetCommands = mergePresetCommands(presets);
+  const presetGroups = mergePresetGroups(presets);
   const portsToProbe = [
     ...configuredPorts(config?.config.ports),
     ...inferPortsFromScripts(scripts),
-    ...defaultPortsForFramework(framework)
+    ...defaultPortsForFramework(framework),
+    ...presets.flatMap((preset) => preset.ports)
   ];
 
   const [packageManager, env, docker, git, ports, readme, license] = await Promise.all([
@@ -65,11 +77,15 @@ export async function scanProject(root = process.cwd()): Promise<ScanResult> {
     projectName: config?.config.name ?? packageJson?.data.name ?? path.basename(resolvedRoot),
     packageJson,
     packageManager: packageManager ?? (packageJson ? 'npm' : null),
+    language,
     scripts,
     env,
     docker,
     git,
     framework,
+    presets,
+    presetCommands,
+    presetGroups,
     ports: ports ?? [],
     readme,
     license,

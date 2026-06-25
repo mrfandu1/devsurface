@@ -154,6 +154,27 @@ describe('scanner', () => {
     expect(framework?.type).toBe('Node.js / Next.js / Express');
   });
 
+  it('adds framework preset commands and ports', async () => {
+    const root = await tempProject();
+    await writeJson(path.join(root, 'package.json'), {
+      name: 'preset-demo',
+      dependencies: {
+        next: '^15.0.0',
+        prisma: '^6.0.0'
+      }
+    });
+
+    const scan = await scanProject(root);
+
+    expect(scan.presets.map((preset) => preset.name)).toEqual(
+      expect.arrayContaining(['next', 'prisma'])
+    );
+    expect(scan.presetCommands['next:dev']).toBe('next dev');
+    expect(scan.presetCommands['prisma:studio']).toBe('prisma studio');
+    expect(scan.presetGroups['Next.js']).toContain('next:dev');
+    expect(scan.ports.map((port) => port.port)).toEqual(expect.arrayContaining([3000, 5555]));
+  });
+
   it('returns Docker Compose services with status objects', async () => {
     const root = await tempProject();
     const oldPath = process.env.PATH;
@@ -289,6 +310,42 @@ describe('scanner', () => {
     expect(scan.packageManager).toBe('npm');
     expect(scan.framework?.detected).toContain('Vite');
     expect(scan.ports.map((port) => port.port)).toContain(4123);
+  });
+
+  it('detects Python projects and framework commands without package.json', async () => {
+    const root = await tempProject();
+    await fs.writeFile(path.join(root, 'requirements.txt'), 'fastapi\nuvicorn\n', 'utf8');
+
+    const scan = await scanProject(root);
+
+    expect(scan.packageJson).toBeNull();
+    expect(scan.packageManager).toBeNull();
+    expect(scan.language.primary).toBe('python');
+    expect(scan.presetCommands['python:dev']).toBe('uvicorn main:app --reload --host 127.0.0.1');
+    expect(scan.ports.map((port) => port.port)).toContain(8000);
+  });
+
+  it('detects Go projects and adds Go commands', async () => {
+    const root = await tempProject();
+    await fs.writeFile(path.join(root, 'go.mod'), 'module example.com/demo\n', 'utf8');
+
+    const scan = await scanProject(root);
+
+    expect(scan.language.primary).toBe('go');
+    expect(scan.presetCommands['go:run']).toBe('go run .');
+    expect(scan.presetCommands['go:test']).toBe('go test ./...');
+  });
+
+  it('detects Java build files and adds build tool commands', async () => {
+    const root = await tempProject();
+    await fs.writeFile(path.join(root, 'pom.xml'), '<project />\n', 'utf8');
+    await fs.writeFile(path.join(root, 'build.gradle'), 'plugins { id "java" }\n', 'utf8');
+
+    const scan = await scanProject(root);
+
+    expect(scan.language.primary).toBe('java');
+    expect(scan.presetCommands['maven:test']).toBe('mvn test');
+    expect(scan.presetCommands['gradle:build']).toBe('gradle build');
   });
 
   it('ignores README symlinks that resolve outside the project root', async () => {

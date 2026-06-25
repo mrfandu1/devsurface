@@ -45,7 +45,10 @@ export async function runDoctor(root = process.cwd(), scan?: ScanResult): Promis
     );
   }
 
-  if (result.packageJson === null) {
+  const isNodeProject = result.language.detected.includes('node');
+  const hasKnownProjectLanguage = result.language.detected.length > 0;
+
+  if (result.packageJson === null && !hasKnownProjectLanguage) {
     warnings.push(
       warning(
         'missing-package-json',
@@ -57,7 +60,7 @@ export async function runDoctor(root = process.cwd(), scan?: ScanResult): Promis
     return warnings;
   }
 
-  if (!(await pathExists(path.join(root, 'node_modules', '.bin')))) {
+  if (isNodeProject && !(await pathExists(path.join(root, 'node_modules', '.bin')))) {
     warnings.push(
       warning(
         'missing-node-modules',
@@ -147,7 +150,7 @@ export async function runDoctor(root = process.cwd(), scan?: ScanResult): Promis
     );
   }
 
-  if (result.scripts.test === undefined) {
+  if (isNodeProject && result.scripts.test === undefined) {
     warnings.push(
       warning(
         'missing-test-script',
@@ -158,7 +161,7 @@ export async function runDoctor(root = process.cwd(), scan?: ScanResult): Promis
     );
   }
 
-  if (result.scripts.build === undefined) {
+  if (isNodeProject && result.scripts.build === undefined) {
     warnings.push(
       warning(
         'missing-build-script',

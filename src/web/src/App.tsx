@@ -126,14 +126,21 @@ function scriptOrder(project: ScanResult): string[] {
 function configuredCommandGroups(
   project: ScanResult
 ): Array<{ name: string; commands: Array<{ name: string; command: string }> }> {
-  const commands = project.config?.config.commands ?? {};
+  const commands = {
+    ...project.presetCommands,
+    ...project.config?.config.commands
+  };
+  const rawGroups = {
+    ...project.presetGroups,
+    ...project.config?.config.groups
+  };
   const commandNames = Object.keys(commands);
   if (commandNames.length === 0) {
     return [];
   }
 
   const grouped = new Set<string>();
-  const groups = Object.entries(project.config?.config.groups ?? {})
+  const groups = Object.entries(rawGroups)
     .map(([name, entries]) => {
       const present = entries
         .filter((entry) => commands[entry] !== undefined)
@@ -149,7 +156,7 @@ function configuredCommandGroups(
     .filter((name) => !grouped.has(name))
     .map((name) => ({ name, command: commands[name] }));
   if (ungrouped.length > 0) {
-    groups.push({ name: 'Configured Commands', commands: ungrouped });
+    groups.push({ name: 'Detected Commands', commands: ungrouped });
   }
 
   return groups;
@@ -515,6 +522,13 @@ function OverviewMatrix({ project, lastRefreshed }: { project: ScanResult; lastR
     },
     {
       icon: 'check',
+      label: 'Language',
+      value:
+        project.language.detected.length > 0 ? project.language.detected.join(', ') : 'unknown',
+      tone: project.language.primary ? 'ok' : 'muted'
+    },
+    {
+      icon: 'check',
       label: 'Node.js',
       value: nodeVersion,
       tone: 'ok'
@@ -529,6 +543,15 @@ function OverviewMatrix({ project, lastRefreshed }: { project: ScanResult; lastR
       label: 'Framework',
       value: project.framework?.type ?? viteVersion,
       tone: project.framework ? 'ok' : 'muted'
+    },
+    {
+      icon: 'box',
+      label: 'Presets',
+      value:
+        project.presets.length > 0
+          ? project.presets.map((preset) => preset.label).join(', ')
+          : 'none',
+      tone: project.presets.length > 0 ? 'ok' : 'muted'
     },
     {
       icon: 'doc',

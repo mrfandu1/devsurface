@@ -9,9 +9,11 @@ function formatList(values: string[]): string {
 
 export function printScanResult(scan: ScanResult): void {
   console.log(pc.bold(`Project:   ${safeTerminalText(scan.projectName)}`));
+  console.log(`Language:  ${formatList(scan.language.detected) || 'unknown'}`);
   console.log(`Type:      ${safeTerminalText(scan.framework?.type ?? 'Unknown')}`);
   console.log(`Manager:   ${safeTerminalText(scan.packageManager ?? 'unknown')}`);
   console.log(`Scripts:   ${formatList(Object.keys(scan.scripts))}`);
+  console.log(`Presets:   ${formatList(scan.presets.map((preset) => preset.label)) || 'none'}`);
   console.log(`Git:       ${safeTerminalText(scan.git?.branch ?? 'not detected')}`);
   console.log(`README:    ${scan.readme.exists ? 'found' : 'missing'}`);
   console.log(`LICENSE:   ${scan.license.exists ? 'found' : 'missing'}`);

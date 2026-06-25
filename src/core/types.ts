@@ -1,4 +1,5 @@
 export type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun';
+export type ProjectLanguage = 'node' | 'python' | 'go' | 'java';
 
 export type WarningSeverity = 'error' | 'warning' | 'info';
 
@@ -64,6 +65,20 @@ export interface FrameworkInfo {
   detected: string[];
 }
 
+export interface ProjectLanguageInfo {
+  primary: ProjectLanguage | null;
+  detected: ProjectLanguage[];
+  files: string[];
+}
+
+export interface PresetInfo {
+  name: string;
+  label: string;
+  commands: Record<string, string>;
+  groups: Record<string, string[]>;
+  ports: number[];
+}
+
 export interface FilePresence {
   path: string | null;
   exists: boolean;
@@ -101,11 +116,15 @@ export interface ScanResult {
   projectName: string;
   packageJson: PackageJsonInfo | null;
   packageManager: PackageManager | null;
+  language: ProjectLanguageInfo;
   scripts: Record<string, string>;
   env: EnvInfo | null;
   docker: DockerInfo | null;
   git: GitInfo | null;
   framework: FrameworkInfo | null;
+  presets: PresetInfo[];
+  presetCommands: Record<string, string>;
+  presetGroups: Record<string, string[]>;
   ports: PortProbe[];
   readme: FilePresence;
   license: FilePresence;

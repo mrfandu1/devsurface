@@ -38,6 +38,18 @@ describe('doctor', () => {
     expect(warningIds).not.toContain('missing-license');
   });
 
+  it('does not require package.json for detected non-Node projects', async () => {
+    const root = await tempProject();
+    await fs.writeFile(path.join(root, 'pyproject.toml'), '[project]\nname = "api"\n', 'utf8');
+
+    const warningIds = (await runDoctor(root)).map((warning) => warning.id);
+
+    expect(warningIds).not.toContain('missing-package-json');
+    expect(warningIds).not.toContain('missing-node-modules');
+    expect(warningIds).not.toContain('missing-test-script');
+    expect(warningIds).not.toContain('missing-build-script');
+  });
+
   it('reports README script references that do not exist', async () => {
     const root = await tempProject();
     await writeJson(path.join(root, 'package.json'), {

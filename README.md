@@ -6,7 +6,7 @@
 
 <h1>DevSurface</h1>
 
-<p><strong>Turn any Node.js repository into a local developer control panel.</strong></p>
+<p><strong>Local developer dashboard for Node.js repositories.</strong></p>
 
 <p>
   <a href="#quick-start">Quick Start</a>
@@ -22,19 +22,30 @@
   <a href="https://github.com/mrfandu1/devsurface">
     <img alt="DevSurface ready" src="docs/devsurface-badge.svg">
   </a>
+  <a href="https://www.npmjs.com/package/devsurface">
+    <img alt="npm version" src="https://img.shields.io/npm/v/devsurface.svg">
+  </a>
+  <a href="https://www.npmjs.com/package/devsurface">
+    <img alt="npm downloads" src="https://img.shields.io/npm/dm/devsurface.svg">
+  </a>
+  <a href="https://github.com/mrfandu1/devsurface/stargazers">
+    <img alt="GitHub stars" src="https://img.shields.io/github/stars/mrfandu1/devsurface?style=flat">
+  </a>
   <a href="LICENSE">
-    <img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-informational">
+    <img alt="License: MIT" src="https://img.shields.io/github/license/mrfandu1/devsurface">
   </a>
   <img alt="Built with TypeScript" src="https://img.shields.io/badge/Built%20with-TypeScript-3178c6">
 </p>
 
 </div>
 
-DevSurface scans a project, starts a local dashboard, and shows the things contributors
-usually need before a project will run: package scripts, environment files, ports,
-Docker Compose, live command logs, and repo health warnings.
+DevSurface is a zero-config CLI and local browser dashboard for understanding,
+configuring, and running unfamiliar repositories. It detects Node.js package scripts,
+Python, Go, and Java project commands, environment files, occupied ports, Docker
+Compose services, frameworks, live command logs, repo health checks, and
+multi-workspace projects.
 
-No config file is required.
+No global install, account, cloud service, or config file is required.
 
 ```bash
 npx devsurface
@@ -63,6 +74,36 @@ DevSurface is local-first:
 - No accounts, cloud sync, telemetry, or analytics.
 - `.env` values are never displayed.
 - Commands are shown before they run.
+
+## Use Cases
+
+DevSurface is useful when you need to:
+
+- Onboard contributors to an unfamiliar Node.js repository.
+- Explore available npm, pnpm, Yarn, or Bun scripts.
+- Check missing environment variables before starting a project.
+- Detect local port conflicts.
+- View and control Docker Compose services.
+- Run development commands from a browser dashboard.
+- Check repository onboarding health in GitHub Actions.
+- Manage multiple local project workspaces.
+
+## Supported Frameworks and Tools
+
+DevSurface detects projects using:
+
+- Next.js
+- Vite
+- Express
+- Fastify
+- NestJS
+- Remix
+- Prisma
+- Python: FastAPI/Uvicorn, Flask, Django
+- Go modules
+- Java: Maven and Gradle
+- Docker Compose
+- npm, pnpm, Yarn, and Bun
 
 ## How It Compares
 
@@ -294,6 +335,31 @@ DevSurface is designed for local development.
 - Destructive-looking configured commands, such as `rm -rf`, `docker volume rm`,
   database drops, and `git clean -fd`, are visibly marked before execution.
 - Child processes started by DevSurface are cleaned up when the dashboard exits.
+
+## FAQ
+
+### What is DevSurface?
+
+DevSurface is a local developer dashboard for understanding, configuring, and running
+Node.js repositories.
+
+### Can DevSurface run npm scripts from a browser?
+
+Yes. DevSurface detects `package.json` scripts and lets you run them while viewing
+live logs and exit status.
+
+### Does DevSurface display .env values?
+
+No. DevSurface checks whether environment keys exist, but never displays their values.
+
+### Does DevSurface require configuration?
+
+No. It works automatically, with an optional `devsurface.config.json` file for richer
+commands, groups, ports, env paths, and docs links.
+
+### Does DevSurface support Docker Compose?
+
+Yes. It detects Compose services and provides service status, controls, and recent logs.
 
 ## Examples
 

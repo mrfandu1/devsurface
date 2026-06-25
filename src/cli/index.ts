@@ -11,6 +11,7 @@ import {
   workspaceListCommand,
   workspaceRemoveCommand
 } from './commands/workspace.js';
+import { printUpdateNotice } from './updateCheck.js';
 import { DEV_SURFACE_VERSION } from '../version.js';
 
 const program = new Command();
@@ -25,11 +26,15 @@ function toPort(value: string): number {
 }
 
 function handle(command: Promise<void>): void {
-  command.catch((error) => {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error(message);
-    process.exitCode = 1;
-  });
+  command
+    .then(async () => {
+      await printUpdateNotice(DEV_SURFACE_VERSION);
+    })
+    .catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(message);
+      process.exitCode = 1;
+    });
 }
 
 program

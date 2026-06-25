@@ -364,7 +364,8 @@ function registerWorkspaceRoutes(
     if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
     const name = decodeURIComponent(context.req.param('name'));
     const scan = await scanProject(ws.root);
-    const configuredCommand = scan.config?.config.commands?.[name] ?? null;
+    const configuredCommand =
+      scan.config?.config.commands?.[name] ?? scan.presetCommands[name] ?? null;
 
     if (configuredCommand === null) {
       return context.json({ error: `Configured command "${name}" was not found.` }, 404);
@@ -657,7 +658,8 @@ export function registerApiRoutes(
   app.post('/api/commands/:name', async (context) => {
     const name = decodeURIComponent(context.req.param('name'));
     const scan = await scanProject(options.projectRoot);
-    const configuredCommand = scan.config?.config.commands?.[name] ?? null;
+    const configuredCommand =
+      scan.config?.config.commands?.[name] ?? scan.presetCommands[name] ?? null;
 
     if (configuredCommand === null) {
       return context.json({ error: `Configured command "${name}" was not found.` }, 404);

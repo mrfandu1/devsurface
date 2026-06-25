@@ -1,4 +1,5 @@
 export type Severity = 'error' | 'warning' | 'info';
+export type ProjectLanguage = 'node' | 'python' | 'go' | 'java';
 
 export interface EnvKeyStatus {
   key: string;
@@ -22,6 +23,11 @@ export interface ScanResult {
     };
   } | null;
   packageManager: 'npm' | 'pnpm' | 'yarn' | 'bun' | null;
+  language: {
+    primary: ProjectLanguage | null;
+    detected: ProjectLanguage[];
+    files: string[];
+  };
   scripts: Record<string, string>;
   env: {
     hasExample: boolean;
@@ -51,6 +57,15 @@ export interface ScanResult {
     type: string;
     detected: string[];
   } | null;
+  presets: Array<{
+    name: string;
+    label: string;
+    commands: Record<string, string>;
+    groups: Record<string, string[]>;
+    ports: number[];
+  }>;
+  presetCommands: Record<string, string>;
+  presetGroups: Record<string, string[]>;
   ports: Array<{
     port: number;
     inUse: boolean;
@@ -66,6 +81,7 @@ export interface ScanResult {
       description?: string;
       commands?: Record<string, string>;
       groups?: Record<string, string[]>;
+      ports?: number[];
       docs?: string;
     };
     warnings: string[];

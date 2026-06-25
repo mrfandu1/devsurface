@@ -1,10 +1,29 @@
 {
   "name": "devsurface",
-  "version": "0.4.0",
-  "description": "Turn any Node.js repository into a local developer control panel.",
+  "version": "0.5.0",
+  "description": "Zero-config local developer dashboard and CLI for Node.js, Python, Go, and Java repositories. Detect scripts, env files, ports, Docker services, frameworks, logs, and repo health.",
   "type": "module",
   "license": "MIT",
   "author": "mrfandu1",
+  "keywords": [
+    "developer-dashboard",
+    "local-development",
+    "nodejs",
+    "cli",
+    "developer-tools",
+    "developer-productivity",
+    "project-dashboard",
+    "repository-health",
+    "developer-onboarding",
+    "repository-scanner",
+    "npm-scripts",
+    "task-runner",
+    "docker-compose",
+    "port-checker",
+    "environment-checker",
+    "github-action",
+    "zero-config"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/mrfandu1/devsurface.git"
