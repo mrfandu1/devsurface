@@ -63,6 +63,39 @@ function toGroups(value: unknown, warnings: string[]): Record<string, string[]> 
   return groups;
 }
 
+export const MAX_SETUP_GUIDE_STEPS = 24;
+const MAX_SETUP_GUIDE_STEP_LENGTH = 200;
+
+function toSetupGuide(value: unknown, warnings: string[]): string[] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!Array.isArray(value)) {
+    warnings.push('setupGuide must be an array of strings.');
+    return undefined;
+  }
+
+  const steps: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== 'string') {
+      warnings.push('setupGuide entries must be strings.');
+      continue;
+    }
+    const trimmed = entry.trim();
+    if (trimmed.length === 0) {
+      continue;
+    }
+    steps.push(trimmed.slice(0, MAX_SETUP_GUIDE_STEP_LENGTH));
+  }
+
+  if (steps.length > MAX_SETUP_GUIDE_STEPS) {
+    warnings.push(`setupGuide may contain at most ${MAX_SETUP_GUIDE_STEPS} steps.`);
+  }
+
+  return steps.slice(0, MAX_SETUP_GUIDE_STEPS);
+}
+
 function toPorts(value: unknown, warnings: string[]): number[] | undefined {
   if (value === undefined) {
     return undefined;
@@ -132,6 +165,7 @@ export function validateConfig(raw: unknown): { config: DevSurfaceConfig; warnin
       ports: toPorts(raw.ports, warnings),
       env,
       services,
+      setupGuide: toSetupGuide(raw.setupGuide ?? raw.setup_guide, warnings),
       docs
     },
     warnings

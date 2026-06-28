@@ -68,6 +68,33 @@ function toGroups(value, warnings) {
   }
   return groups;
 }
+var MAX_SETUP_GUIDE_STEPS = 24;
+var MAX_SETUP_GUIDE_STEP_LENGTH = 200;
+function toSetupGuide(value, warnings) {
+  if (value === void 0) {
+    return void 0;
+  }
+  if (!Array.isArray(value)) {
+    warnings.push("setupGuide must be an array of strings.");
+    return void 0;
+  }
+  const steps = [];
+  for (const entry of value) {
+    if (typeof entry !== "string") {
+      warnings.push("setupGuide entries must be strings.");
+      continue;
+    }
+    const trimmed = entry.trim();
+    if (trimmed.length === 0) {
+      continue;
+    }
+    steps.push(trimmed.slice(0, MAX_SETUP_GUIDE_STEP_LENGTH));
+  }
+  if (steps.length > MAX_SETUP_GUIDE_STEPS) {
+    warnings.push(`setupGuide may contain at most ${MAX_SETUP_GUIDE_STEPS} steps.`);
+  }
+  return steps.slice(0, MAX_SETUP_GUIDE_STEPS);
+}
 function toPorts(value, warnings) {
   if (value === void 0) {
     return void 0;
@@ -122,6 +149,7 @@ function validateConfig(raw) {
       ports: toPorts(raw.ports, warnings),
       env,
       services,
+      setupGuide: toSetupGuide(raw.setupGuide ?? raw.setup_guide, warnings),
       docs
     },
     warnings

@@ -17,6 +17,8 @@ import { mutationHeaders, apiPrefix } from './mutation';
 import type {
   DoctorWarning,
   ManagedProcessSnapshot,
+  OnboardingPlan,
+  OnboardingStep,
   ProcessLogEvent,
   ScanResult,
   WorkspaceSummary
@@ -419,6 +421,7 @@ function Sidebar({
 }) {
   const items = [
     { icon: 'home', label: 'Overview', view: 'overview' },
+    { icon: 'check', label: 'Onboarding', view: 'onboarding' },
     { icon: 'script', label: 'Scripts', view: 'scripts' },
     { icon: 'env', label: 'Environment', view: 'environment' },
     { icon: 'ports', label: 'Ports', view: 'ports' },
@@ -1705,6 +1708,123 @@ function DetailDrawer({
   );
 }
 
+function onboardingStatusMeta(status: OnboardingStep['status']): {
+  className: string;
+  label: string;
+  icon: string;
+} {
+  if (status === 'done') {
+    return { className: 'done', label: 'Done', icon: 'check' };
+  }
+  if (status === 'todo') {
+    return { className: 'todo', label: 'To do', icon: 'play' };
+  }
+  return { className: 'manual', label: 'Manual', icon: 'alert' };
+}
+
+function OnboardingProgress({ plan }: { plan: OnboardingPlan }) {
+  return (
+    <section className="onboarding-progress">
+      <div className="onboarding-progress-head">
+        <strong>{plan.readiness}% ready</strong>
+        <span>{plan.summary}</span>
+      </div>
+      <div className="onboarding-progress-bar">
+        <span
+          className={plan.ready ? 'ready' : ''}
+          style={{ width: `${Math.max(plan.readiness, 2)}%` }}
+        />
+      </div>
+    </section>
+  );
+}
+
+function OnboardingBanner({ plan, onOpen }: { plan: OnboardingPlan; onOpen: () => void }) {
+  return (
+    <section className="onboarding-banner">
+      <span className="onboarding-banner-score">{plan.readiness}%</span>
+      <div className="onboarding-banner-copy">
+        <strong>Project setup {plan.readiness}% ready</strong>
+        <p>{plan.summary}</p>
+      </div>
+      <button className="minor-button" onClick={onOpen} type="button">
+        View setup
+        <Icon name="chevron" />
+      </button>
+    </section>
+  );
+}
+
+function OnboardingView({
+  plan,
+  onRunStep,
+  onRefresh
+}: {
+  plan: OnboardingPlan | null;
+  onRunStep: (step: OnboardingStep) => void;
+  onRefresh: () => Promise<void>;
+}) {
+  return (
+    <section className="section-page">
+      <header className="section-page-header">
+        <div>
+          <span className="drawer-kicker">DevSurface</span>
+          <h1>Onboarding</h1>
+        </div>
+        <button className="utility-button compact" onClick={() => void onRefresh()} type="button">
+          <Icon name="refresh" />
+          Refresh Data
+        </button>
+      </header>
+      {plan === null ? (
+        <p className="drawer-note">
+          Onboarding plan is unavailable. Refresh once the project finishes scanning.
+        </p>
+      ) : (
+        <div className="section-grid single">
+          <OnboardingProgress plan={plan} />
+          {plan.steps.length === 0 ? (
+            <p className="drawer-note">No onboarding steps were detected for this project.</p>
+          ) : (
+            <div className="onboarding-steps">
+              {plan.steps.map((step) => {
+                const meta = onboardingStatusMeta(step.status);
+                const actionable = step.action !== undefined && step.status !== 'done';
+                return (
+                  <article className={`onboarding-step ${meta.className}`} key={step.id}>
+                    <span className={`onboarding-step-badge ${meta.className}`}>
+                      <Icon name={meta.icon} />
+                    </span>
+                    <div className="onboarding-step-body">
+                      <strong>{step.title}</strong>
+                      <p>{step.description}</p>
+                    </div>
+                    <div className="onboarding-step-action">
+                      {actionable && step.action ? (
+                        <button
+                          className="minor-button"
+                          onClick={() => onRunStep(step)}
+                          type="button"
+                        >
+                          {step.action.label}
+                        </button>
+                      ) : (
+                        <span className={`badge ${step.status === 'done' ? 'ok' : ''}`}>
+                          {meta.label}
+                        </span>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function SectionPage({
   view,
   project,
@@ -1725,7 +1845,7 @@ function SectionPage({
   onRefresh,
   onSettingsChange
 }: {
-  view: Exclude<ActiveView, 'overview'>;
+  view: Exclude<ActiveView, 'overview' | 'onboarding'>;
   project: ScanResult;
   warnings: DoctorWarning[];
   logs: ProcessLogEvent[];
@@ -1744,7 +1864,7 @@ function SectionPage({
   onRefresh: () => Promise<void>;
   onSettingsChange: (settings: DashboardSettings) => void;
 }) {
-  const titleMap: Record<Exclude<ActiveView, 'overview'>, string> = {
+  const titleMap: Record<Exclude<ActiveView, 'overview' | 'onboarding'>, string> = {
     scripts: 'Scripts',
     environment: 'Environment',
     ports: 'Ports',
@@ -2203,6 +2323,46 @@ export default function App() {
     await refreshProject();
   }
 
+  async function runOnboardingStep(step: OnboardingStep): Promise<void> {
+    const action = step.action;
+    const project = projectState.project;
+    if (action === undefined || project === null) {
+      return;
+    }
+
+    if (action.kind === 'install') {
+      await installDependencies();
+      return;
+    }
+    if (action.kind === 'env-copy') {
+      await copyEnvExample();
+      return;
+    }
+    if (action.kind === 'run-script' && action.target !== undefined) {
+      await runScript(action.target);
+      return;
+    }
+    if (action.kind === 'run-command' && action.target !== undefined) {
+      const command =
+        project.config?.config.commands?.[action.target] ??
+        project.presetCommands[action.target] ??
+        action.target;
+      await runConfiguredCommand(action.target, command);
+      return;
+    }
+    if (action.kind === 'docker') {
+      setActiveView('services');
+      return;
+    }
+    if (
+      action.kind === 'open-docs' &&
+      action.target !== undefined &&
+      isSafeHttpUrl(action.target)
+    ) {
+      window.open(action.target, '_blank', 'noopener,noreferrer');
+    }
+  }
+
   async function copyEnvExample(): Promise<void> {
     const confirmed = window.confirm(
       'Copy .env.example to .env? Existing .env files are never overwritten.'
@@ -2338,6 +2498,12 @@ export default function App() {
           {activeView === 'overview' ? (
             <>
               <div className="primary-column">
+                {projectState.onboarding && !projectState.onboarding.ready ? (
+                  <OnboardingBanner
+                    plan={projectState.onboarding}
+                    onOpen={() => setActiveView('onboarding')}
+                  />
+                ) : null}
                 <OverviewMatrix project={projectState.project} lastRefreshed={lastRefreshed} />
                 <QuickActionStrip
                   packageManager={projectState.project.packageManager}
@@ -2397,6 +2563,12 @@ export default function App() {
                 />
               </aside>
             </>
+          ) : activeView === 'onboarding' ? (
+            <OnboardingView
+              plan={projectState.onboarding}
+              onRunStep={(step) => void runOnboardingStep(step)}
+              onRefresh={refreshProject}
+            />
           ) : (
             <SectionPage
               view={activeView}

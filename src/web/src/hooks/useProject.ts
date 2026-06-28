@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { DoctorWarning, ManagedProcessSnapshot, ProcessLogEvent, ScanResult } from '../types';
+import type {
+  DoctorWarning,
+  ManagedProcessSnapshot,
+  OnboardingPlan,
+  ProcessLogEvent,
+  ScanResult
+} from '../types';
 import { readWorkspaceCache, writeWorkspaceCache } from '../workspaceCache';
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -11,12 +17,21 @@ async function fetchJson<T>(url: string): Promise<T> {
   return (await response.json()) as T;
 }
 
+async function fetchOptional<T>(url: string): Promise<T | null> {
+  try {
+    return await fetchJson<T>(url);
+  } catch {
+    return null;
+  }
+}
+
 export function useProject(workspaceId: string | null) {
   const cached = readWorkspaceCache(workspaceId);
   const [project, setProject] = useState<ScanResult | null>(cached.project);
   const [health, setHealth] = useState<DoctorWarning[]>(cached.health);
   const [processes, setProcesses] = useState<ManagedProcessSnapshot[]>(cached.processes);
   const [logs, setLogs] = useState<ProcessLogEvent[]>(cached.logs);
+  const [onboarding, setOnboarding] = useState<OnboardingPlan | null>(null);
   const [loading, setLoading] = useState(() => !cached.project);
   const [error, setError] = useState<string | null>(null);
 
@@ -27,14 +42,16 @@ export function useProject(workspaceId: string | null) {
     }
     try {
       const prefix = `/api/workspaces/${encodeURIComponent(workspaceId)}`;
-      const [nextProject, nextHealth, nextProcesses, nextLogs] = await Promise.all([
+      const [nextProject, nextHealth, nextProcesses, nextLogs, nextOnboarding] = await Promise.all([
         fetchJson<ScanResult>(`${prefix}/project`),
         fetchJson<DoctorWarning[]>(`${prefix}/health`),
         fetchJson<ManagedProcessSnapshot[]>(`${prefix}/processes`),
-        fetchJson<ProcessLogEvent[]>(`${prefix}/logs`)
+        fetchJson<ProcessLogEvent[]>(`${prefix}/logs`),
+        fetchOptional<OnboardingPlan>(`${prefix}/onboarding`)
       ]);
       setProject(nextProject);
       setHealth(nextHealth);
+      setOnboarding(nextOnboarding);
       setProcesses(nextProcesses);
       setLogs(nextLogs.slice(-500));
       if (workspaceId) {
@@ -69,6 +86,7 @@ export function useProject(workspaceId: string | null) {
     health,
     processes,
     logs,
+    onboarding,
     loading,
     error,
     refresh

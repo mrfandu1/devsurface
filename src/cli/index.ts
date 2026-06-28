@@ -2,6 +2,7 @@
 import { Command } from 'commander';
 import { doctorCommand } from './commands/doctor.js';
 import { initCommand } from './commands/init.js';
+import { onboardCommand } from './commands/onboard.js';
 import { runCommand } from './commands/run.js';
 import { scanCommand } from './commands/scan.js';
 import { startCommand } from './commands/start.js';
@@ -102,6 +103,13 @@ program
   .description('Print setup health warnings.')
   .action(() => {
     handle(doctorCommand(process.cwd()));
+  });
+
+program
+  .command('onboard')
+  .description('Print a guided setup checklist with readiness score.')
+  .action(() => {
+    handle(onboardCommand(process.cwd()));
   });
 
 program

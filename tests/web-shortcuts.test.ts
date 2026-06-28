@@ -25,9 +25,13 @@ describe('dashboard keyboard shortcuts', () => {
     });
     expect(getDashboardShortcut(keyEvent('2'))).toEqual({
       type: 'view',
+      view: 'onboarding'
+    });
+    expect(getDashboardShortcut(keyEvent('3'))).toEqual({
+      type: 'view',
       view: 'scripts'
     });
-    expect(getDashboardShortcut(keyEvent('7'))).toEqual({
+    expect(getDashboardShortcut(keyEvent('8'))).toEqual({
       type: 'view',
       view: 'logs'
     });

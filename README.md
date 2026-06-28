@@ -328,12 +328,16 @@ DevSurface is designed for local development.
 
 - Local dashboard servers bind to loopback hosts.
 - Container deployments use `DEVSURFACE_CONTAINER=true`.
-- Workspace registration can be limited with `DEVSURFACE_WORKSPACE_ROOTS`.
+- Workspace registration can be limited with `DEVSURFACE_WORKSPACE_ROOTS`. In container
+  or shared-host deployments, set this to restrict which directories the hub will accept;
+  on a single-user laptop it is optional and DevSurface starts with no extra config.
 - `.env` values are never returned by scanners, API routes, CLI output, or UI panels.
 - Dashboard command runs show the exact command string first.
 - Docker service start and stop actions show the exact Compose command before running.
 - Destructive-looking configured commands, such as `rm -rf`, `docker volume rm`,
-  database drops, and `git clean -fd`, are visibly marked before execution.
+  database drops, and `git clean -fd`, are visibly marked before execution. This list is a
+  helpful warning, not a sandbox: it flags common footguns for confirmation but does not
+  attempt to detect every dangerous command. Treat package scripts as code that runs as you.
 - Child processes started by DevSurface are cleaned up when the dashboard exits.
 
 ## FAQ

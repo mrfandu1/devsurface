@@ -1,7 +1,12 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { MAX_CONFIGURED_PORTS, loadConfig, validateConfig } from '../src/core/config/load.js';
+import {
+  MAX_CONFIGURED_PORTS,
+  MAX_SETUP_GUIDE_STEPS,
+  loadConfig,
+  validateConfig
+} from '../src/core/config/load.js';
 import { makeTempProject, removeTempProject, writeJson } from './testUtils.js';
 
 const tempProjects: string[] = [];
@@ -86,5 +91,33 @@ describe('config loader', () => {
 
     expect(result.config.docs).toBeUndefined();
     expect(result.warnings).toContain('docs must be an http or https URL.');
+  });
+
+  it('parses and trims setupGuide steps', () => {
+    const result = validateConfig({
+      setupGuide: ['  Copy .env  ', '', 'Run migrate', 42]
+    });
+
+    expect(result.config.setupGuide).toEqual(['Copy .env', 'Run migrate']);
+    expect(result.warnings).toContain('setupGuide entries must be strings.');
+  });
+
+  it('accepts the snake_case setup_guide alias', () => {
+    const result = validateConfig({
+      setup_guide: ['Install deps']
+    });
+
+    expect(result.config.setupGuide).toEqual(['Install deps']);
+  });
+
+  it('caps setupGuide steps during validation', () => {
+    const result = validateConfig({
+      setupGuide: Array.from({ length: MAX_SETUP_GUIDE_STEPS + 5 }, (_, index) => `step ${index}`)
+    });
+
+    expect(result.config.setupGuide).toHaveLength(MAX_SETUP_GUIDE_STEPS);
+    expect(result.warnings).toContain(
+      `setupGuide may contain at most ${MAX_SETUP_GUIDE_STEPS} steps.`
+    );
   });
 });

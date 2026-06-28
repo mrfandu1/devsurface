@@ -26,5 +26,11 @@ export const defaultConfig: DevSurfaceConfig = {
   services: {
     docker: true
   },
+  setupGuide: [
+    'Copy .env.example to .env',
+    'Fill in required environment values',
+    'Install dependencies',
+    'Start the dev server'
+  ],
   docs: ''
 };

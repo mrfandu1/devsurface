@@ -134,7 +134,10 @@ export class WorkspaceRegistry {
 
   private async write(entries: WorkspaceEntry[]): Promise<void> {
     await fs.mkdir(path.dirname(this.filePath), { recursive: true });
-    await fs.writeFile(this.filePath, JSON.stringify(entries, null, 2) + '\n', 'utf8');
+    await fs.writeFile(this.filePath, JSON.stringify(entries, null, 2) + '\n', {
+      encoding: 'utf8',
+      mode: 0o600
+    });
   }
 
   private async seedFromEnv(): Promise<void> {

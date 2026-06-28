@@ -14,6 +14,20 @@ import { setupWebSocket, setupHubWebSocket } from './routes/ws.js';
 import { createMutationToken } from './mutationToken.js';
 import { initializeListenHost, DEFAULT_PORT } from './listenConfig.js';
 
+function warnIfContainerRootsUnset(host: string): void {
+  if (host !== '0.0.0.0' && host !== '::') {
+    return;
+  }
+  if (process.env.DEVSURFACE_WORKSPACE_ROOTS?.trim()) {
+    return;
+  }
+  console.warn(
+    'Warning: DEVSURFACE_WORKSPACE_ROOTS is unset in container mode. ' +
+      'Any loopback or private-network client can register arbitrary directories as workspaces. ' +
+      'Set DEVSURFACE_WORKSPACE_ROOTS to restrict workspace registration.'
+  );
+}
+
 export { DEFAULT_HOST, DEFAULT_PORT, resolveHost } from './listenConfig.js';
 
 export interface DevSurfaceServer {
@@ -184,6 +198,7 @@ export async function startHubServer(options: {
   const port = options.port ?? DEFAULT_PORT;
   const hub = new Hub({ dataDir: options.dataDir });
   hub.attachCleanupHandlers();
+  warnIfContainerRootsUnset(host);
 
   if (options.initialWorkspace) {
     await hub.registry.add(options.initialWorkspace);

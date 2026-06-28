@@ -1,5 +1,6 @@
 export type DashboardShortcutView =
   | 'overview'
+  | 'onboarding'
   | 'scripts'
   | 'environment'
   | 'ports'
@@ -32,12 +33,13 @@ export interface DashboardShortcutEvent {
 
 const VIEW_SHORTCUTS = new Map<string, DashboardShortcutView>([
   ['1', 'overview'],
-  ['2', 'scripts'],
-  ['3', 'environment'],
-  ['4', 'ports'],
-  ['5', 'services'],
-  ['6', 'health'],
-  ['7', 'logs']
+  ['2', 'onboarding'],
+  ['3', 'scripts'],
+  ['4', 'environment'],
+  ['5', 'ports'],
+  ['6', 'services'],
+  ['7', 'health'],
+  ['8', 'logs']
 ]);
 
 function isShortcutBlockedTarget(target: DashboardShortcutEvent['target']): boolean {

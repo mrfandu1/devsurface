@@ -115,6 +115,30 @@ describe('api routes', () => {
     expect(body).not.toContain('postgres://secret');
   });
 
+  it('returns an onboarding plan with a readiness score', async () => {
+    const root = await tempProject();
+    await writeJson(path.join(root, 'package.json'), {
+      name: 'onboard-demo',
+      scripts: { dev: 'vite' }
+    });
+    await fs.writeFile(path.join(root, '.env.example'), 'API_KEY=\n', 'utf8');
+    const app = await createTestApp(root);
+
+    const response = await app.request('http://127.0.0.1:4567/api/onboarding');
+    expect(response.status).toBe(200);
+
+    const plan = (await response.json()) as {
+      readiness: number;
+      ready: boolean;
+      steps: Array<{ id: string; status: string }>;
+    };
+    expect(typeof plan.readiness).toBe('number');
+    expect(plan.steps.some((step) => step.id === 'create-env' && step.status === 'todo')).toBe(
+      true
+    );
+    expect(plan.steps.some((step) => step.id === 'start-app')).toBe(true);
+  });
+
   it('does not overwrite an existing .env file', async () => {
     const root = await tempProject();
     await writeJson(path.join(root, 'package.json'), {

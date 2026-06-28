@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.0
+
+- Added guided onboarding with a setup readiness score (0–100%) computed from scan and doctor results.
+- Added `devsurface onboard` CLI command that prints a colored checklist of setup steps with done/todo/manual status.
+- Added `/api/onboarding` endpoint (and `/api/workspaces/:id/onboarding` for hub mode) returning the full onboarding plan.
+- Added Onboarding tab in the dashboard with progress bar, per-step actions (install deps, copy `.env`, run scripts, open docs), and a compact banner on the overview when the project is not yet ready.
+- Added `setupGuide` (or `setup_guide`) field in `devsurface.config.json` for maintainers to embed ordered setup instructions (max 24 steps, 200 chars each).
+- Added Python, Go, and Java language support to the onboarding plan; install step is skipped for non-Node projects.
+- Hardened hub workspace registry file permissions to `0o600`.
+- Added a startup warning when `DEVSURFACE_WORKSPACE_ROOTS` is unset in container mode.
+- Shifted keyboard shortcuts: 2=Onboarding, 3=Scripts, 8=Logs (previously 7).
+
 ## 0.5.0
 
 - Added framework presets for Next.js, Vite, Express, Fastify, NestJS, Remix, and Prisma.

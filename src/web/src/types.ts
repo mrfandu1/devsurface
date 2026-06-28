@@ -82,10 +82,43 @@ export interface ScanResult {
       commands?: Record<string, string>;
       groups?: Record<string, string[]>;
       ports?: number[];
+      setupGuide?: string[];
       docs?: string;
     };
     warnings: string[];
   } | null;
+}
+
+export type OnboardingStepStatus = 'done' | 'todo' | 'manual';
+
+export type OnboardingActionKind =
+  | 'install'
+  | 'env-copy'
+  | 'run-script'
+  | 'run-command'
+  | 'docker'
+  | 'open-docs';
+
+export interface OnboardingAction {
+  kind: OnboardingActionKind;
+  label: string;
+  target?: string;
+}
+
+export interface OnboardingStep {
+  id: string;
+  title: string;
+  description: string;
+  status: OnboardingStepStatus;
+  blocking: boolean;
+  action?: OnboardingAction;
+}
+
+export interface OnboardingPlan {
+  steps: OnboardingStep[];
+  readiness: number;
+  ready: boolean;
+  summary: string;
 }
 
 export interface DoctorWarning {

@@ -17,6 +17,7 @@ import {
   resolvePackageRunCommand
 } from '../../core/process/runner.js';
 import { runDoctor } from '../../core/doctor/index.js';
+import { buildOnboardingPlan } from '../../core/onboarding/index.js';
 import { scanProject } from '../../core/scanner/index.js';
 import type { Hub } from '../../core/hub/runtime.js';
 import { DEV_SURFACE_VERSION } from '../../version.js';
@@ -239,6 +240,12 @@ function handleDockerError(
   throw error;
 }
 
+async function onboardingForRoot(root: string) {
+  const scan = await scanProject(root);
+  const warnings = await runDoctor(root, scan);
+  return buildOnboardingPlan(scan, warnings);
+}
+
 function registerWorkspaceRoutes(
   app: Hono,
   resolveWorkspace: (id: string) => Promise<{
@@ -257,6 +264,12 @@ function registerWorkspaceRoutes(
     const ws = await resolveWorkspace(context.req.param('id'));
     if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
     return context.json(await runDoctor(ws.root));
+  });
+
+  app.get('/api/workspaces/:id/onboarding', async (context) => {
+    const ws = await resolveWorkspace(context.req.param('id'));
+    if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
+    return context.json(await onboardingForRoot(ws.root));
   });
 
   app.get('/api/workspaces/:id/processes', async (context) => {
@@ -526,6 +539,12 @@ export function registerHubApiRoutes(
     return context.json(await runDoctor(hub.ensure(entries[0]).root));
   });
 
+  app.get('/api/onboarding', async (context) => {
+    const entries = await hub.registry.list();
+    if (entries.length === 0) return context.json({ error: 'No workspaces registered.' }, 404);
+    return context.json(await onboardingForRoot(hub.ensure(entries[0]).root));
+  });
+
   app.get('/api/processes', async (context) => {
     const entries = await hub.registry.list();
     if (entries.length === 0) return context.json([]);
@@ -567,6 +586,10 @@ export function registerApiRoutes(
 
   app.get('/api/health', async (context) => {
     return context.json(await runDoctor(options.projectRoot));
+  });
+
+  app.get('/api/onboarding', async (context) => {
+    return context.json(await onboardingForRoot(options.projectRoot));
   });
 
   app.get('/api/processes', (context) => {

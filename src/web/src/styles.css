@@ -2067,3 +2067,152 @@ h2 {
   font-size: 12px;
   opacity: 0.7;
 }
+
+.onboarding-banner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 18px;
+  padding: 14px 18px;
+  border: 1px solid #d8d2bd;
+  border-left: 4px solid #b8902f;
+  border-radius: 8px;
+  background: #fcf8ec;
+}
+
+.onboarding-banner-score {
+  font-size: 22px;
+  font-weight: 800;
+  color: #8a6a16;
+}
+
+.onboarding-banner-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.onboarding-banner-copy strong {
+  display: block;
+  font-size: 14px;
+}
+
+.onboarding-banner-copy p {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #555550;
+}
+
+.onboarding-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+  border: 1px solid #cfcfca;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.onboarding-progress-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.onboarding-progress-head strong {
+  font-size: 20px;
+}
+
+.onboarding-progress-head span {
+  font-size: 12px;
+  color: #555550;
+  text-align: right;
+}
+
+.onboarding-progress-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: #ededea;
+  overflow: hidden;
+}
+
+.onboarding-progress-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: #b8902f;
+  transition: width 0.3s ease;
+}
+
+.onboarding-progress-bar span.ready {
+  background: #2f9e44;
+}
+
+.onboarding-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.onboarding-step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  border: 1px solid #cfcfca;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.onboarding-step.done {
+  background: #f6faf4;
+  border-color: #cfe3c8;
+}
+
+.onboarding-step-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #f3f2ec;
+  color: #8a8a82;
+}
+
+.onboarding-step-badge .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.onboarding-step-badge.done {
+  background: #e2f3df;
+  color: #2f9e44;
+}
+
+.onboarding-step-badge.todo {
+  background: #fcf3df;
+  color: #b8902f;
+}
+
+.onboarding-step-badge.manual {
+  background: #eef1f6;
+  color: #4a6da3;
+}
+
+.onboarding-step-body strong {
+  display: block;
+  font-size: 14px;
+}
+
+.onboarding-step-body p {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #555550;
+  word-break: break-word;
+}
+
+.onboarding-step-action {
+  justify-self: end;
+}

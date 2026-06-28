@@ -102,6 +102,7 @@ export interface DevSurfaceConfig {
   services?: {
     docker?: boolean;
   };
+  setupGuide?: string[];
   docs?: string;
 }
 
@@ -155,4 +156,40 @@ export interface ManagedProcessSnapshot {
   startedAt: string;
   endedAt: string | null;
   exitCode: number | null;
+}
+
+export type OnboardingStepStatus = 'done' | 'todo' | 'manual';
+
+export type OnboardingActionKind =
+  | 'install'
+  | 'env-copy'
+  | 'run-script'
+  | 'run-command'
+  | 'docker'
+  | 'open-docs';
+
+export interface OnboardingAction {
+  kind: OnboardingActionKind;
+  label: string;
+  /** Script name, configured command name, or URL depending on the action kind. */
+  target?: string;
+}
+
+export interface OnboardingStep {
+  id: string;
+  title: string;
+  description: string;
+  status: OnboardingStepStatus;
+  /** Whether this step gates project readiness (counts toward the readiness score). */
+  blocking: boolean;
+  action?: OnboardingAction;
+}
+
+export interface OnboardingPlan {
+  steps: OnboardingStep[];
+  /** Percentage (0-100) of blocking steps already satisfied. */
+  readiness: number;
+  /** True when every blocking step is satisfied. */
+  ready: boolean;
+  summary: string;
 }
