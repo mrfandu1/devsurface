@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { isSafeHttpUrl } from '../security/url.js';
-import type { ConfigLoadResult, DevSurfaceConfig } from '../types.js';
+import type { ConfigLoadResult, DevSurfaceConfig, SetupGuideStep } from '../types.js';
 import { CONFIG_FILE_NAME } from './defaults.js';
 
 export const MAX_CONFIGURED_PORTS = 32;
@@ -66,27 +66,47 @@ function toGroups(value: unknown, warnings: string[]): Record<string, string[]> 
 export const MAX_SETUP_GUIDE_STEPS = 24;
 const MAX_SETUP_GUIDE_STEP_LENGTH = 200;
 
-function toSetupGuide(value: unknown, warnings: string[]): string[] | undefined {
+function toSetupGuide(
+  value: unknown,
+  warnings: string[]
+): Array<string | SetupGuideStep> | undefined {
   if (value === undefined) {
     return undefined;
   }
 
   if (!Array.isArray(value)) {
-    warnings.push('setupGuide must be an array of strings.');
+    warnings.push('setupGuide must be an array of strings or step objects.');
     return undefined;
   }
 
-  const steps: string[] = [];
+  const steps: Array<string | SetupGuideStep> = [];
   for (const entry of value) {
-    if (typeof entry !== 'string') {
-      warnings.push('setupGuide entries must be strings.');
-      continue;
+    if (typeof entry === 'string') {
+      const trimmed = entry.trim();
+      if (trimmed.length > 0) {
+        steps.push(trimmed.slice(0, MAX_SETUP_GUIDE_STEP_LENGTH));
+      }
+    } else if (isRecord(entry)) {
+      if (typeof entry.title !== 'string' || entry.title.trim().length === 0) {
+        warnings.push('setupGuide step objects must have a non-empty title string.');
+        continue;
+      }
+      const step: SetupGuideStep = {
+        title: entry.title.trim().slice(0, MAX_SETUP_GUIDE_STEP_LENGTH)
+      };
+      if (typeof entry.description === 'string' && entry.description.trim().length > 0) {
+        step.description = entry.description.trim().slice(0, MAX_SETUP_GUIDE_STEP_LENGTH);
+      }
+      if (typeof entry.command === 'string' && entry.command.trim().length > 0) {
+        step.command = entry.command.trim();
+      }
+      if (typeof entry.script === 'string' && entry.script.trim().length > 0) {
+        step.script = entry.script.trim();
+      }
+      steps.push(step);
+    } else {
+      warnings.push('setupGuide entries must be strings or step objects.');
     }
-    const trimmed = entry.trim();
-    if (trimmed.length === 0) {
-      continue;
-    }
-    steps.push(trimmed.slice(0, MAX_SETUP_GUIDE_STEP_LENGTH));
   }
 
   if (steps.length > MAX_SETUP_GUIDE_STEPS) {

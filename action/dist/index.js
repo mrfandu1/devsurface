@@ -75,20 +75,37 @@ function toSetupGuide(value, warnings) {
     return void 0;
   }
   if (!Array.isArray(value)) {
-    warnings.push("setupGuide must be an array of strings.");
+    warnings.push("setupGuide must be an array of strings or step objects.");
     return void 0;
   }
   const steps = [];
   for (const entry of value) {
-    if (typeof entry !== "string") {
-      warnings.push("setupGuide entries must be strings.");
-      continue;
+    if (typeof entry === "string") {
+      const trimmed = entry.trim();
+      if (trimmed.length > 0) {
+        steps.push(trimmed.slice(0, MAX_SETUP_GUIDE_STEP_LENGTH));
+      }
+    } else if (isRecord(entry)) {
+      if (typeof entry.title !== "string" || entry.title.trim().length === 0) {
+        warnings.push("setupGuide step objects must have a non-empty title string.");
+        continue;
+      }
+      const step = {
+        title: entry.title.trim().slice(0, MAX_SETUP_GUIDE_STEP_LENGTH)
+      };
+      if (typeof entry.description === "string" && entry.description.trim().length > 0) {
+        step.description = entry.description.trim().slice(0, MAX_SETUP_GUIDE_STEP_LENGTH);
+      }
+      if (typeof entry.command === "string" && entry.command.trim().length > 0) {
+        step.command = entry.command.trim();
+      }
+      if (typeof entry.script === "string" && entry.script.trim().length > 0) {
+        step.script = entry.script.trim();
+      }
+      steps.push(step);
+    } else {
+      warnings.push("setupGuide entries must be strings or step objects.");
     }
-    const trimmed = entry.trim();
-    if (trimmed.length === 0) {
-      continue;
-    }
-    steps.push(trimmed.slice(0, MAX_SETUP_GUIDE_STEP_LENGTH));
   }
   if (steps.length > MAX_SETUP_GUIDE_STEPS) {
     warnings.push(`setupGuide may contain at most ${MAX_SETUP_GUIDE_STEPS} steps.`);

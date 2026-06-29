@@ -89,6 +89,15 @@ export interface PortProbe {
   inUse: boolean;
 }
 
+export interface SetupGuideStep {
+  title: string;
+  description?: string;
+  /** Key in config.commands — generates a run-command action button. */
+  command?: string;
+  /** package.json script name — generates a run-script action button. */
+  script?: string;
+}
+
 export interface DevSurfaceConfig {
   name?: string;
   description?: string;
@@ -102,7 +111,7 @@ export interface DevSurfaceConfig {
   services?: {
     docker?: boolean;
   };
-  setupGuide?: string[];
+  setupGuide?: Array<string | SetupGuideStep>;
   docs?: string;
 }
 

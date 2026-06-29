@@ -4,7 +4,8 @@ import type {
   OnboardingAction,
   OnboardingPlan,
   OnboardingStep,
-  ScanResult
+  ScanResult,
+  SetupGuideStep
 } from '../types.js';
 
 function hasWarning(warnings: DoctorWarning[], id: string): boolean {
@@ -156,14 +157,33 @@ export function buildOnboardingPlan(scan: ScanResult, warnings: DoctorWarning[])
   }
 
   // 6. Maintainer-authored setup guide steps (non-blocking guidance).
+  const allCommands = { ...scan.presetCommands, ...(scan.config?.config.commands ?? {}) };
   for (const [index, entry] of (scan.config?.config.setupGuide ?? []).entries()) {
-    steps.push({
-      id: `guide-${index}`,
-      title: entry,
-      description: 'From the project setup guide.',
-      status: 'manual',
-      blocking: false
-    });
+    if (typeof entry === 'string') {
+      steps.push({
+        id: `guide-${index}`,
+        title: entry,
+        description: 'From the project setup guide.',
+        status: 'manual',
+        blocking: false
+      });
+    } else {
+      const step = entry as SetupGuideStep;
+      let action: OnboardingAction | undefined;
+      if (step.command !== undefined && step.command in allCommands) {
+        action = { kind: 'run-command', label: 'Run', target: step.command };
+      } else if (step.script !== undefined) {
+        action = { kind: 'run-script', label: 'Run', target: step.script };
+      }
+      steps.push({
+        id: `guide-${index}`,
+        title: step.title,
+        description: step.description ?? 'From the project setup guide.',
+        status: action !== undefined ? 'todo' : 'manual',
+        blocking: false,
+        action
+      });
+    }
   }
 
   // 7. Project docs link.

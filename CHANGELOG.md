@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.1
+
+- Added structured `setupGuide` steps in `devsurface.config.json`: each step can be a plain string or an object with `title`, `description`, and a `command` or `script` key that turns it into a one-click action button in the Onboarding tab.
+- Updated `devsurface init` to generate a richer config with grouped commands (First-time setup, Daily development, Before committing) and actionable setup steps.
+- Added plain-English explanations for every package script in the dashboard, so non-technical users can see what a command like `vite` or `tsc --noEmit` actually does before running it.
+
 ## 0.6.0
 
 - Added guided onboarding with a setup readiness score (0–100%) computed from scan and doctor results.

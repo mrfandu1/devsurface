@@ -698,6 +698,14 @@ h2 {
   line-height: 1.2;
 }
 
+.script-command {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 4px;
+}
+
 .script-item code {
   min-width: 0;
   overflow: hidden;
@@ -706,6 +714,17 @@ h2 {
   line-height: 1.45;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.script-command code {
+  padding: 0;
+}
+
+.script-explain {
+  color: #5a5a54;
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: normal;
 }
 
 .script-status {

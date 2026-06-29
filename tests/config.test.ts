@@ -93,13 +93,41 @@ describe('config loader', () => {
     expect(result.warnings).toContain('docs must be an http or https URL.');
   });
 
-  it('parses and trims setupGuide steps', () => {
+  it('parses and trims setupGuide string steps, skips invalid entries', () => {
     const result = validateConfig({
       setupGuide: ['  Copy .env  ', '', 'Run migrate', 42]
     });
 
     expect(result.config.setupGuide).toEqual(['Copy .env', 'Run migrate']);
-    expect(result.warnings).toContain('setupGuide entries must be strings.');
+    expect(result.warnings).toContain('setupGuide entries must be strings or step objects.');
+  });
+
+  it('parses structured setupGuide step objects', () => {
+    const result = validateConfig({
+      setupGuide: [
+        { title: 'Install dependencies', command: 'install', description: 'Run npm install.' },
+        { title: '  Start the app  ', script: 'dev' },
+        { title: 'Plain step without action' }
+      ]
+    });
+
+    expect(result.config.setupGuide).toEqual([
+      { title: 'Install dependencies', command: 'install', description: 'Run npm install.' },
+      { title: 'Start the app', script: 'dev' },
+      { title: 'Plain step without action' }
+    ]);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('rejects structured step objects missing a title', () => {
+    const result = validateConfig({
+      setupGuide: [{ command: 'install' }]
+    });
+
+    expect(result.config.setupGuide).toEqual([]);
+    expect(result.warnings).toContain(
+      'setupGuide step objects must have a non-empty title string.'
+    );
   });
 
   it('accepts the snake_case setup_guide alias', () => {

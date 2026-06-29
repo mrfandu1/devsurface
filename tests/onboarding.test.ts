@@ -149,6 +149,62 @@ describe('buildOnboardingPlan', () => {
     expect(docs?.action?.target).toBe('https://docs.example.com');
   });
 
+  it('generates run-command actions for structured guide steps that reference config commands', () => {
+    const scan = baseScan({
+      config: {
+        path: '/tmp/project/devsurface.config.json',
+        config: {
+          commands: { migrate: 'npm run db:migrate', dev: 'npm run dev' },
+          setupGuide: [
+            { title: 'Run migrations', command: 'migrate', description: 'Apply schema changes.' },
+            { title: 'Start dev server', command: 'dev' },
+            { title: 'Manual note', description: 'No action here.' },
+            'Plain text step'
+          ]
+        },
+        warnings: []
+      }
+    });
+
+    const plan = buildOnboardingPlan(scan, []);
+    const guideSteps = plan.steps.filter((step) => step.id.startsWith('guide-'));
+
+    expect(guideSteps).toHaveLength(4);
+
+    expect(guideSteps[0].action).toEqual({ kind: 'run-command', label: 'Run', target: 'migrate' });
+    expect(guideSteps[0].status).toBe('todo');
+    expect(guideSteps[0].description).toBe('Apply schema changes.');
+
+    expect(guideSteps[1].action).toEqual({ kind: 'run-command', label: 'Run', target: 'dev' });
+    expect(guideSteps[1].status).toBe('todo');
+
+    expect(guideSteps[2].action).toBeUndefined();
+    expect(guideSteps[2].status).toBe('manual');
+
+    expect(guideSteps[3].title).toBe('Plain text step');
+    expect(guideSteps[3].status).toBe('manual');
+    expect(guideSteps[3].action).toBeUndefined();
+  });
+
+  it('generates run-script actions for structured guide steps with a script key', () => {
+    const scan = baseScan({
+      scripts: { lint: 'eslint .' },
+      config: {
+        path: '/tmp/project/devsurface.config.json',
+        config: {
+          setupGuide: [{ title: 'Lint the code', script: 'lint' }]
+        },
+        warnings: []
+      }
+    });
+
+    const plan = buildOnboardingPlan(scan, []);
+    const lintStep = plan.steps.find((step) => step.id === 'guide-0');
+
+    expect(lintStep?.action).toEqual({ kind: 'run-script', label: 'Run', target: 'lint' });
+    expect(lintStep?.status).toBe('todo');
+  });
+
   it('skips install for non-node projects', () => {
     const scan = baseScan({
       packageJson: null,

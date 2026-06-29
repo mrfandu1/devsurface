@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { safeDisplayText } from '@core/security/text.js';
 import { isDangerousCommand } from '@core/security/dangerousCommand.js';
 import { isSafeHttpUrl } from '@core/security/url.js';
+import { explainScript } from '@core/explain/index.js';
 import { DEV_SURFACE_VERSION } from '../../version';
 import {
   appUrlForPort,
@@ -697,7 +698,12 @@ function ScriptsTable({
               onClick={() => onSelect(script)}
             >
               <strong>{script}</strong>
-              <code>{compactCommand(project.scripts[script])}</code>
+              <div className="script-command">
+                <code>{compactCommand(project.scripts[script])}</code>
+                <span className="script-explain">
+                  {explainScript(script, project.scripts[script])}
+                </span>
+              </div>
               <span className={`script-status status-${status}`}>
                 <i />
                 {statusLabel}

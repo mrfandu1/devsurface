@@ -82,7 +82,9 @@ export interface ScanResult {
       commands?: Record<string, string>;
       groups?: Record<string, string[]>;
       ports?: number[];
-      setupGuide?: string[];
+      setupGuide?: Array<
+        string | { title: string; description?: string; command?: string; script?: string }
+      >;
       docs?: string;
     };
     warnings: string[];
