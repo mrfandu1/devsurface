@@ -12,6 +12,7 @@ export interface PackageJsonData {
   devDependencies?: Record<string, string>;
   optionalDependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;
+  engines?: Record<string, string>;
 }
 
 export interface PackageJsonInfo {
@@ -84,9 +85,16 @@ export interface FilePresence {
   exists: boolean;
 }
 
+export interface PortOwner {
+  pid: number;
+  name: string | null;
+}
+
 export interface PortProbe {
   port: number;
   inUse: boolean;
+  /** Process listening on the port, when it can be identified. */
+  owner?: PortOwner | null;
 }
 
 export interface SetupGuideStep {

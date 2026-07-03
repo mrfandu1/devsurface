@@ -13,6 +13,7 @@ export type DashboardShortcutAction =
   | { type: 'closeDrawer' }
   | { type: 'refresh' }
   | { type: 'toggleSidebar' }
+  | { type: 'palette' }
   | { type: 'view'; view: DashboardShortcutView };
 
 interface DashboardShortcutTarget {
@@ -73,7 +74,14 @@ export function getDashboardShortcut(
   }
 
   if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey) {
-    return event.key.toLowerCase() === 'b' ? { type: 'toggleSidebar' } : null;
+    const key = event.key.toLowerCase();
+    if (key === 'b') {
+      return { type: 'toggleSidebar' };
+    }
+    if (key === 'k') {
+      return { type: 'palette' };
+    }
+    return null;
   }
 
   if (hasAnyModifier) {

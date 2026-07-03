@@ -13,6 +13,7 @@ import {
 import { useProject } from './hooks/useProject';
 import { useSocket } from './hooks/useSocket';
 import { useWorkspace } from './hooks/useWorkspace';
+import { CommandPalette, type PaletteItem } from './components/CommandPalette';
 import { getDashboardShortcut, type DashboardShortcutView } from './keyboardShortcuts';
 import { mutationHeaders, apiPrefix } from './mutation';
 import type {
@@ -499,6 +500,13 @@ function Topbar({ project, onRefresh }: { project: ScanResult; onRefresh: () => 
   );
 }
 
+function describePortOwner(owner: ScanResult['ports'][number]['owner']): string {
+  if (owner === undefined || owner === null) {
+    return '';
+  }
+  return owner.name === null ? ` by PID ${owner.pid}` : ` by ${owner.name} (PID ${owner.pid})`;
+}
+
 function OverviewMatrix({ project, lastRefreshed }: { project: ScanResult; lastRefreshed: Date }) {
   const packageData = project.packageJson?.data;
   const viteVersion =
@@ -614,6 +622,7 @@ function OverviewMatrix({ project, lastRefreshed }: { project: ScanResult; lastR
 
 function QuickActionStrip({
   packageManager,
+  passportHref,
   onRunScript,
   onOpenTerminal,
   onOpenFolder,
@@ -621,6 +630,7 @@ function QuickActionStrip({
   onInstall
 }: {
   packageManager: ScanResult['packageManager'];
+  passportHref: string;
   onRunScript: () => void;
   onOpenTerminal: () => void;
   onOpenFolder: () => void;
@@ -653,6 +663,16 @@ function QuickActionStrip({
             <span className="button-label">{action.label}</span>
           </button>
         ))}
+        <a
+          className="utility-button"
+          href={passportHref}
+          target="_blank"
+          rel="noreferrer"
+          title="Open a shareable onboarding report for this project"
+        >
+          <Icon name="doc" />
+          <span className="button-label">Passport</span>
+        </a>
       </div>
     </section>
   );
@@ -938,9 +958,12 @@ function PortsInspector({
             <div className="port-entry" key={port.port}>
               <strong>{port.port}</strong>
               <code>http://localhost:{port.port}</code>
-              <span className={port.inUse ? 'badge bad' : 'badge ok'}>
+              <span
+                className={port.inUse ? 'badge bad' : 'badge ok'}
+                title={port.inUse ? `in use${describePortOwner(port.owner)}` : undefined}
+              >
                 <i />
-                {port.inUse ? 'in use' : 'available'}
+                {port.inUse ? `in use${describePortOwner(port.owner)}` : 'available'}
               </span>
             </div>
           ))
@@ -1831,6 +1854,66 @@ function OnboardingView({
   );
 }
 
+/**
+ * Write-only editor for one env key. The input is a password field, the value
+ * is cleared after saving, and nothing about the value is ever rendered back.
+ */
+function EnvKeyEditor({
+  envKey,
+  onSave
+}: {
+  envKey: string;
+  onSave: (key: string, value: string) => Promise<void>;
+}) {
+  const [value, setValue] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save(): Promise<void> {
+    if (value.length === 0 || busy) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await onSave(envKey, value);
+      setValue('');
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : String(saveError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="env-editor">
+      <input
+        type="password"
+        autoComplete="off"
+        placeholder={`Paste a value for ${envKey}`}
+        value={value}
+        disabled={busy}
+        onChange={(event) => setValue(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            void save();
+          }
+        }}
+      />
+      <button
+        className="minor-button"
+        type="button"
+        disabled={busy || value.length === 0}
+        onClick={() => void save()}
+      >
+        {busy ? 'Saving…' : 'Save'}
+      </button>
+      {error !== null ? <span className="text-bad env-editor-error">{error}</span> : null}
+    </div>
+  );
+}
+
 function SectionPage({
   view,
   project,
@@ -1849,7 +1932,8 @@ function SectionPage({
   onStopDockerService,
   onLoadDockerLogs,
   onRefresh,
-  onSettingsChange
+  onSettingsChange,
+  onSetEnv
 }: {
   view: Exclude<ActiveView, 'overview' | 'onboarding'>;
   project: ScanResult;
@@ -1869,6 +1953,7 @@ function SectionPage({
   onLoadDockerLogs: (service: string) => Promise<void>;
   onRefresh: () => Promise<void>;
   onSettingsChange: (settings: DashboardSettings) => void;
+  onSetEnv: (key: string, value: string) => Promise<void>;
 }) {
   const titleMap: Record<Exclude<ActiveView, 'overview' | 'onboarding'>, string> = {
     scripts: 'Scripts',
@@ -1976,15 +2061,24 @@ function SectionPage({
             ) : (
               <div className="drawer-table two-col">
                 {project.env.keys.map((item) => (
-                  <div className="drawer-row" key={item.key}>
-                    <code>{item.key}</code>
-                    <strong className={item.present && !item.empty ? 'text-ok' : 'text-bad'}>
-                      {item.present ? (item.empty ? 'empty' : 'present') : 'missing'}
-                    </strong>
+                  <div className="env-variable-block" key={item.key}>
+                    <div className="drawer-row">
+                      <code>{item.key}</code>
+                      <strong className={item.present && !item.empty ? 'text-ok' : 'text-bad'}>
+                        {item.present ? (item.empty ? 'empty' : 'present') : 'missing'}
+                      </strong>
+                    </div>
+                    {!item.present || item.empty ? (
+                      <EnvKeyEditor envKey={item.key} onSave={onSetEnv} />
+                    ) : null}
                   </div>
                 ))}
               </div>
             )}
+            <p className="drawer-note">
+              Values you save are written straight to .env and are never shown back, logged, or sent
+              anywhere.
+            </p>
           </DrawerSection>
         </div>
       ) : null}
@@ -2001,7 +2095,7 @@ function SectionPage({
                     <strong>{port.port}</strong>
                     <code>http://localhost:{port.port}</code>
                     <span className={port.inUse ? 'text-bad' : 'text-ok'}>
-                      {port.inUse ? 'in use' : 'available'}
+                      {port.inUse ? `in use${describePortOwner(port.owner)}` : 'available'}
                     </span>
                   </div>
                 ))}
@@ -2142,6 +2236,7 @@ export default function App() {
   const [dockerBusy, setDockerBusy] = useState<DockerBusyState | null>(null);
   const [dockerLogs, setDockerLogs] = useState<DockerLogState | null>(null);
   const [dockerError, setDockerError] = useState<string | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const processes = useMemo(
     () => mergeProcesses(projectState.processes, socket.processes),
     [projectState.processes, socket.processes]
@@ -2173,6 +2268,11 @@ export default function App() {
 
       if (action.type === 'toggleSidebar') {
         setSidebarCollapsed((current) => !current);
+        return;
+      }
+
+      if (action.type === 'palette') {
+        setPaletteOpen((current) => !current);
         return;
       }
 
@@ -2389,6 +2489,19 @@ export default function App() {
     await refreshProject();
   }
 
+  async function setEnvKeyValue(key: string, value: string): Promise<void> {
+    const response = await fetch(`${wsPrefix}/env/set`, {
+      method: 'POST',
+      headers: { ...(await mutationHeaders()), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key, value })
+    });
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+      throw new Error(payload?.error ?? `Unable to save ${key}`);
+    }
+    await refreshProject();
+  }
+
   async function dockerResponseError(response: Response, fallback: string): Promise<string> {
     const payload = (await response.json().catch(() => null)) as { error?: string } | null;
     return payload?.error ?? fallback;
@@ -2476,6 +2589,92 @@ export default function App() {
 
   const firstScript = scriptOrder(projectState.project)[0] ?? null;
 
+  const paletteItems: PaletteItem[] = [
+    ...(
+      [
+        ['overview', 'Overview'],
+        ['onboarding', 'Onboarding'],
+        ['scripts', 'Scripts'],
+        ['environment', 'Environment'],
+        ['ports', 'Ports'],
+        ['services', 'Services'],
+        ['health', 'Repo Health'],
+        ['logs', 'Logs'],
+        ['settings', 'Settings']
+      ] as Array<[ActiveView, string]>
+    ).map(([view, label]) => ({
+      id: `view-${view}`,
+      label: `Go to ${label}`,
+      group: 'Views',
+      keywords: 'open show view page tab',
+      action: () => {
+        setActiveView(view);
+        setDrawer(null);
+      }
+    })),
+    {
+      id: 'action-refresh',
+      label: 'Refresh project data',
+      group: 'Actions',
+      keywords: 'rescan reload',
+      action: () => void refreshProject()
+    },
+    {
+      id: 'action-terminal',
+      label: 'Open terminal here',
+      group: 'Actions',
+      keywords: 'shell console cmd',
+      action: () => void openTerminal()
+    },
+    {
+      id: 'action-folder',
+      label: 'Open project folder',
+      group: 'Actions',
+      keywords: 'explorer finder files',
+      action: () => void openFolder()
+    },
+    {
+      id: 'action-install',
+      label: 'Install dependencies',
+      group: 'Actions',
+      hint: projectState.project.packageManager ?? 'npm',
+      keywords: 'npm pnpm yarn bun node_modules',
+      action: () => void installDependencies()
+    },
+    {
+      id: 'action-passport',
+      label: 'Open Project Passport',
+      group: 'Actions',
+      hint: 'shareable onboarding report',
+      keywords: 'report share html onboarding',
+      action: () => {
+        window.open(`${wsPrefix}/passport`, '_blank', 'noreferrer');
+      }
+    },
+    ...Object.entries(projectState.project.scripts).map(([script, command]) => ({
+      id: `script-${script}`,
+      label: `Run ${script}`,
+      hint: explainScript(script, command),
+      group: 'Scripts',
+      keywords: command,
+      action: () => {
+        setActiveView('scripts');
+        setSelectedScript(script);
+        void runScript(script);
+      }
+    })),
+    ...workspaceState.workspaces
+      .filter((workspace) => workspace.id !== workspaceState.activeId)
+      .map((workspace) => ({
+        id: `workspace-${workspace.id}`,
+        label: `Switch to ${workspace.name}`,
+        hint: workspace.path,
+        group: 'Workspaces',
+        keywords: 'workspace project change',
+        action: () => workspaceState.switchWorkspace(workspace.id)
+      }))
+  ];
+
   return (
     <main className="app-shell">
       <Sidebar
@@ -2513,6 +2712,11 @@ export default function App() {
                 <OverviewMatrix project={projectState.project} lastRefreshed={lastRefreshed} />
                 <QuickActionStrip
                   packageManager={projectState.project.packageManager}
+                  passportHref={
+                    workspaceState.activeId
+                      ? `/api/workspaces/${encodeURIComponent(workspaceState.activeId)}/passport`
+                      : '/api/passport'
+                  }
                   onOpenTerminal={() => void openTerminal()}
                   onOpenFolder={() => void openFolder()}
                   onViewPackage={() => void viewPackageJson()}
@@ -2595,6 +2799,7 @@ export default function App() {
               onLoadDockerLogs={loadDockerLogs}
               onRefresh={refreshProject}
               onSettingsChange={setSettings}
+              onSetEnv={setEnvKeyValue}
             />
           )}
         </div>
@@ -2618,6 +2823,9 @@ export default function App() {
         onClose={() => setDrawer(null)}
         onSettingsChange={setSettings}
       />
+      {paletteOpen ? (
+        <CommandPalette items={paletteItems} onClose={() => setPaletteOpen(false)} />
+      ) : null}
     </main>
   );
 }

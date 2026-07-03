@@ -10,6 +10,7 @@ import { detectProjectLanguage } from './language.js';
 import { detectPackageManager } from './packageManager.js';
 import { readPackageJson } from './packageJson.js';
 import { defaultPortsForFramework, detectPorts, inferPortsFromScripts } from './ports.js';
+import { findPortOwners } from './portOwner.js';
 import { detectPresets, mergePresetCommands, mergePresetGroups } from './presets.js';
 import { extractScripts } from './scripts.js';
 
@@ -71,6 +72,17 @@ export async function scanProject(root = process.cwd()): Promise<ScanResult> {
     findFirstFile(resolvedRoot, ['README.md', 'README']),
     findFirstFile(resolvedRoot, ['LICENSE', 'LICENSE.md', 'COPYING'])
   ]);
+
+  // Identify who is squatting on busy ports so conflicts are actionable.
+  const busyPorts = (ports ?? []).filter((probe) => probe.inUse).map((probe) => probe.port);
+  if (busyPorts.length > 0) {
+    const owners = await findPortOwners(busyPorts);
+    for (const probe of ports ?? []) {
+      if (probe.inUse) {
+        probe.owner = owners.get(probe.port) ?? null;
+      }
+    }
+  }
 
   return {
     root: resolvedRoot,

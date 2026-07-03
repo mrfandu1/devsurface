@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.8.0
+
+- Added Project Passport: `devsurface passport` generates a single self-contained
+  HTML onboarding report that explains the project in plain English — what it is,
+  how to run it step by step with exact commands, every script explained, env key
+  names (never values), ports, Docker services, and health warnings. It opens
+  offline in any browser and is safe to share.
+- Added `GET /api/workspaces/:id/passport` (and `/api/passport` alias) serving the
+  passport from the dashboard, plus a Passport quick action in the overview.
+- Added port owner detection: busy ports now show which process is squatting on
+  them ("in use by node.exe (PID 1234)") in the Ports view and inspector, using
+  netstat/tasklist on Windows and lsof elsewhere. Lookups are best-effort and
+  never block or fail a scan.
+- Added write-only env quick-fill: missing or empty .env keys get a password
+  input in the Environment view. Values are written straight to .env
+  (created with owner-only permissions when missing) and are never displayed,
+  logged, or returned by any API. New `POST /api/workspaces/:id/env/set` route
+  behind the standard mutation guard.
+- Added a Ctrl+K / Cmd+K command palette: fuzzy-search views, package scripts
+  (with plain-English explanations), quick actions, and workspaces, then run
+  the selection from the keyboard.
+- Fixed `devsurface serve -p <port>` (and other subcommand `-p` flags) being
+  silently swallowed by the root `--port` option, which made the hub always
+  bind the default port 4567.
+
 ## 0.7.1
 
 - Added structured `setupGuide` steps in `devsurface.config.json`: each step can be a plain string or an object with `title`, `description`, and a `command` or `script` key that turns it into a one-click action button in the Onboarding tab.

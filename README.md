@@ -158,11 +158,36 @@ Run DevSurface without installing it globally:
 | `devsurface scan`                  | Print detected project information to the terminal.                  |
 | `devsurface doctor`                | Print setup and repo health warnings.                                |
 | `devsurface init`                  | Create a starter `devsurface.config.json`.                           |
+| `devsurface passport`              | Generate a shareable HTML onboarding report (Project Passport).      |
 | `devsurface run <script>`          | Run a package script and stream output.                              |
 | `devsurface serve`                 | Start the multi-workspace hub server.                                |
 | `devsurface workspace add [path]`  | Register a project directory with the local hub.                     |
 | `devsurface workspace list`        | List registered hub workspaces.                                      |
 | `devsurface workspace remove <id>` | Remove a workspace from the hub registry.                            |
+
+## Project Passport
+
+Some people who need to run a project will never open a terminal happily: a
+designer checking a prototype, a PM reviewing a feature, a student cloning their
+first repo. Project Passport is for them — and for the developer who would
+otherwise write the same "how to run this" message again and again.
+
+```bash
+npx devsurface passport
+```
+
+This writes `devsurface-passport.html`: a single self-contained page that works
+offline in any browser and explains the project in plain English:
+
+- What the project is (framework, languages, services).
+- Step-by-step "get it running" instructions with exact copy-paste commands.
+- Every package script explained in one friendly sentence.
+- Environment keys the project needs (names only — values are never included).
+- Ports, Docker services, and repo health warnings.
+
+Share it in chat, email it to a new contributor, or commit it as living
+onboarding docs. The dashboard has a matching **Passport** quick action, and the
+API serves it at `/api/workspaces/:id/passport`.
 
 ## Multi-Workspace Hub
 
@@ -258,6 +283,11 @@ run package scripts, inspect local ports, require a real `.env`, or contact Dock
 
 ## Dashboard
 
+Press <kbd>Ctrl</kbd>+<kbd>K</kbd> (or <kbd>Cmd</kbd>+<kbd>K</kbd>) anywhere in the
+dashboard to open the command palette: fuzzy-search views, package scripts with
+plain-English explanations, quick actions, and workspaces, and run the selection
+without touching the mouse.
+
 The dashboard includes:
 
 - **Project Overview**: project name, framework, package manager, branch, env, README,
@@ -265,8 +295,10 @@ The dashboard includes:
 - **Quick Actions**: compact direct actions for scripts, terminal, project folder,
   `package.json`, and dependency install.
 - **Scripts**: every package script, plus grouped configured commands when present.
-- **Environment**: `.env` and `.env.example` status, key presence, and copy-from-example.
-- **Ports**: detected ports with availability and conflict warnings.
+- **Environment**: `.env` and `.env.example` status, key presence, copy-from-example,
+  and write-only quick-fill for missing keys (values are never displayed).
+- **Ports**: detected ports with availability, conflict warnings, and the name +
+  PID of the process occupying a busy port.
 - **Services**: Docker Compose daemon state, per-service status, start/stop controls,
   and the latest 200 log lines for each service.
 - **Logs**: expandable per-command logs with timestamps, streams, and exit state.

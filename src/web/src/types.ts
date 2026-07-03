@@ -69,6 +69,7 @@ export interface ScanResult {
   ports: Array<{
     port: number;
     inUse: boolean;
+    owner?: { pid: number; name: string | null } | null;
   }>;
   readme: {
     exists: boolean;

@@ -3,6 +3,7 @@ import { Command } from 'commander';
 import { doctorCommand } from './commands/doctor.js';
 import { initCommand } from './commands/init.js';
 import { onboardCommand } from './commands/onboard.js';
+import { passportCommand } from './commands/passport.js';
 import { runCommand } from './commands/run.js';
 import { scanCommand } from './commands/scan.js';
 import { startCommand } from './commands/start.js';
@@ -42,6 +43,9 @@ program
   .name('devsurface')
   .description('Turn any Node.js repository into a local developer control panel.')
   .version(DEV_SURFACE_VERSION)
+  // Without this, the root -p/--port option swallows "-p" typed after a
+  // subcommand, so "devsurface serve -p 4599" silently bound the default port.
+  .enablePositionalOptions()
   .option('-p, --port <port>', 'dashboard port', toPort, 4567)
   .option('--no-open', 'do not open the browser automatically')
   .action((options: { port: number; open: boolean }) => {
@@ -110,6 +114,14 @@ program
   .description('Print a guided setup checklist with readiness score.')
   .action(() => {
     handle(onboardCommand(process.cwd()));
+  });
+
+program
+  .command('passport')
+  .description('Generate a shareable HTML onboarding report (Project Passport).')
+  .option('-o, --out <file>', 'output file path', 'devsurface-passport.html')
+  .action((options: { out: string }) => {
+    handle(passportCommand(process.cwd(), options.out));
   });
 
 program

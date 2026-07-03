@@ -17,7 +17,9 @@ import {
   resolvePackageRunCommand
 } from '../../core/process/runner.js';
 import { runDoctor } from '../../core/doctor/index.js';
+import { setEnvValue } from '../../core/env/write.js';
 import { buildOnboardingPlan } from '../../core/onboarding/index.js';
+import { renderPassportHtml } from '../../core/passport/index.js';
 import { scanProject } from '../../core/scanner/index.js';
 import type { Hub } from '../../core/hub/runtime.js';
 import { DEV_SURFACE_VERSION } from '../../version.js';
@@ -246,6 +248,53 @@ async function onboardingForRoot(root: string) {
   return buildOnboardingPlan(scan, warnings);
 }
 
+/**
+ * Render the shareable Project Passport for a workspace. Inline by default so
+ * it previews in a browser tab; `?download=1` sets an attachment filename.
+ */
+async function passportResponse(
+  root: string,
+  context: {
+    req: { query: (name: string) => string | undefined };
+    html: (body: string) => Response | Promise<Response>;
+    header: (name: string, value: string) => void;
+  }
+): Promise<Response> {
+  const scan = await scanProject(root);
+  const warnings = await runDoctor(root, scan);
+  const plan = buildOnboardingPlan(scan, warnings);
+  const html = renderPassportHtml({ scan, warnings, plan, version: DEV_SURFACE_VERSION });
+  if (context.req.query('download') === '1') {
+    const safeName = scan.projectName.replace(/[^a-zA-Z0-9._-]+/g, '-').slice(0, 60) || 'project';
+    context.header('Content-Disposition', `attachment; filename="${safeName}-passport.html"`);
+  }
+  return await context.html(html);
+}
+
+/**
+ * Set one .env value (write-only). The response never includes the value —
+ * only the key name and whether it was added or updated.
+ */
+async function handleEnvSet(
+  root: string,
+  body: { key?: unknown; value?: unknown } | null
+): Promise<{ status: 200 | 400; payload: Record<string, string> }> {
+  if (body === null || typeof body.key !== 'string' || typeof body.value !== 'string') {
+    return { status: 400, payload: { error: 'key and value are required.' } };
+  }
+  const scan = await scanProject(root);
+  const result = await setEnvValue({
+    root,
+    localPath: scan.env?.localPath ?? null,
+    key: body.key,
+    value: body.value
+  });
+  if (!result.ok) {
+    return { status: 400, payload: { error: result.error } };
+  }
+  return { status: 200, payload: { status: result.action, key: body.key } };
+}
+
 function registerWorkspaceRoutes(
   app: Hono,
   resolveWorkspace: (id: string) => Promise<{
@@ -270,6 +319,12 @@ function registerWorkspaceRoutes(
     const ws = await resolveWorkspace(context.req.param('id'));
     if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
     return context.json(await onboardingForRoot(ws.root));
+  });
+
+  app.get('/api/workspaces/:id/passport', async (context) => {
+    const ws = await resolveWorkspace(context.req.param('id'));
+    if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
+    return passportResponse(ws.root, context);
   });
 
   app.get('/api/workspaces/:id/processes', async (context) => {
@@ -459,6 +514,14 @@ function registerWorkspaceRoutes(
     return context.json({ copied: true });
   });
 
+  app.post('/api/workspaces/:id/env/set', async (context) => {
+    const ws = await resolveWorkspace(context.req.param('id'));
+    if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
+    const body = await context.req.json<{ key?: unknown; value?: unknown }>().catch(() => null);
+    const result = await handleEnvSet(ws.root, body);
+    return context.json(result.payload, result.status);
+  });
+
   app.delete('/api/workspaces/:id/run/:pid', async (context) => {
     const ws = await resolveWorkspace(context.req.param('id'));
     if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
@@ -545,6 +608,12 @@ export function registerHubApiRoutes(
     return context.json(await onboardingForRoot(hub.ensure(entries[0]).root));
   });
 
+  app.get('/api/passport', async (context) => {
+    const entries = await hub.registry.list();
+    if (entries.length === 0) return context.json({ error: 'No workspaces registered.' }, 404);
+    return passportResponse(hub.ensure(entries[0]).root, context);
+  });
+
   app.get('/api/processes', async (context) => {
     const entries = await hub.registry.list();
     if (entries.length === 0) return context.json([]);
@@ -590,6 +659,10 @@ export function registerApiRoutes(
 
   app.get('/api/onboarding', async (context) => {
     return context.json(await onboardingForRoot(options.projectRoot));
+  });
+
+  app.get('/api/passport', async (context) => {
+    return passportResponse(options.projectRoot, context);
   });
 
   app.get('/api/processes', (context) => {
@@ -754,6 +827,12 @@ export function registerApiRoutes(
       return context.json({ error: '.env already exists.' }, 409);
     }
     return context.json({ copied: true });
+  });
+
+  app.post('/api/env/set', async (context) => {
+    const body = await context.req.json<{ key?: unknown; value?: unknown }>().catch(() => null);
+    const result = await handleEnvSet(options.projectRoot, body);
+    return context.json(result.payload, result.status);
   });
 
   app.delete('/api/run/:pid', (context) => {
