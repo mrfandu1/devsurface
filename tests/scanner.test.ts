@@ -336,6 +336,139 @@ describe('scanner', () => {
     expect(scan.presetCommands['go:test']).toBe('go test ./...');
   });
 
+  it('detects git hook tooling and adds hook commands', async () => {
+    const root = await tempProject();
+    await writeJson(path.join(root, 'package.json'), { name: 'hooks-demo', scripts: {} });
+    await fs.writeFile(path.join(root, '.pre-commit-config.yaml'), 'repos: []\n', 'utf8');
+    await fs.writeFile(path.join(root, 'lefthook.yml'), 'pre-commit:\n', 'utf8');
+
+    const scan = await scanProject(root);
+
+    expect(scan.presetCommands['pre-commit:run']).toBe('pre-commit run --all-files');
+    expect(scan.presetCommands['lefthook:install']).toBe('lefthook install');
+  });
+
+  it('suggests a free port for busy ports', async () => {
+    const root = await tempProject();
+    const server = net.createServer();
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const busyPort = (server.address() as net.AddressInfo).port;
+    try {
+      await writeJson(path.join(root, 'package.json'), {
+        name: 'port-suggest-demo',
+        scripts: { dev: `node server.js --port ${busyPort}` }
+      });
+
+      const scan = await scanProject(root);
+      const probe = scan.ports.find((port) => port.port === busyPort);
+
+      expect(probe?.inUse).toBe(true);
+      expect(typeof probe?.suggestedFreePort).toBe('number');
+      expect(probe?.suggestedFreePort).toBeGreaterThan(busyPort);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it('detects Rust projects and adds Cargo commands', async () => {
+    const root = await tempProject();
+    await fs.writeFile(path.join(root, 'Cargo.toml'), '[package]\nname = "demo"\n', 'utf8');
+    await fs.mkdir(path.join(root, 'src'));
+    await fs.writeFile(path.join(root, 'src', 'main.rs'), 'fn main() {}\n', 'utf8');
+
+    const scan = await scanProject(root);
+
+    expect(scan.language.primary).toBe('rust');
+    expect(scan.presetCommands['cargo:run']).toBe('cargo run');
+    expect(scan.presetCommands['cargo:test']).toBe('cargo test');
+  });
+
+  it('omits cargo run for library-only Rust crates', async () => {
+    const root = await tempProject();
+    await fs.writeFile(path.join(root, 'Cargo.toml'), '[package]\nname = "demo-lib"\n', 'utf8');
+    await fs.mkdir(path.join(root, 'src'));
+    await fs.writeFile(path.join(root, 'src', 'lib.rs'), 'pub fn demo() {}\n', 'utf8');
+
+    const scan = await scanProject(root);
+
+    expect(scan.presetCommands['cargo:run']).toBeUndefined();
+    expect(scan.presetCommands['cargo:build']).toBe('cargo build');
+  });
+
+  it('detects PHP composer projects and Ruby Gemfiles', async () => {
+    const root = await tempProject();
+    await fs.writeFile(
+      path.join(root, 'composer.json'),
+      JSON.stringify({ name: 'demo/app', scripts: { test: 'phpunit' } }),
+      'utf8'
+    );
+    await fs.writeFile(
+      path.join(root, 'Gemfile'),
+      "source 'https://rubygems.org'\ngem 'rails'\n",
+      'utf8'
+    );
+
+    const scan = await scanProject(root);
+
+    expect(scan.language.detected).toEqual(expect.arrayContaining(['php', 'ruby']));
+    expect(scan.presetCommands['composer:install']).toBe('composer install');
+    expect(scan.presetCommands['composer:test']).toBe('composer run test');
+    expect(scan.presetCommands['bundle:install']).toBe('bundle install');
+    expect(scan.presetCommands['rails:server']).toBe('bundle exec rails server -b 127.0.0.1');
+  });
+
+  it('detects justfile recipes, Taskfile tasks, and deno tasks', async () => {
+    const root = await tempProject();
+    await fs.writeFile(
+      path.join(root, 'justfile'),
+      'set shell := ["bash"]\nbuild:\n\techo hi\n',
+      'utf8'
+    );
+    await fs.writeFile(
+      path.join(root, 'Taskfile.yml'),
+      "version: '3'\ntasks:\n  deploy:\n    cmds:\n      - echo deploy\n",
+      'utf8'
+    );
+    await fs.writeFile(
+      path.join(root, 'deno.json'),
+      JSON.stringify({ tasks: { dev: 'deno run main.ts' } }),
+      'utf8'
+    );
+
+    const scan = await scanProject(root);
+
+    expect(scan.presetCommands['just:build']).toBe('just build');
+    expect(scan.presetCommands['just:set']).toBeUndefined();
+    expect(scan.presetCommands['task:deploy']).toBe('task deploy');
+    expect(scan.presetCommands['deno:dev']).toBe('deno task dev');
+  });
+
+  it('adds a docker build command when a Dockerfile exists', async () => {
+    const root = await tempProject();
+    await writeJson(path.join(root, 'package.json'), { name: 'My App!', scripts: {} });
+    await fs.writeFile(path.join(root, 'Dockerfile'), 'FROM node:20\n', 'utf8');
+
+    const scan = await scanProject(root);
+
+    expect(scan.presetCommands['docker:build']).toBe('docker build -t my-app .');
+  });
+
+  it('detects Makefile targets and adds make commands', async () => {
+    const root = await tempProject();
+    await fs.writeFile(
+      path.join(root, 'Makefile'),
+      '.PHONY: build test\nVAR := 1\nbuild:\n\techo build\ntest: build\n\techo test\n%.o: %.c\n\techo pattern\n',
+      'utf8'
+    );
+
+    const scan = await scanProject(root);
+
+    expect(scan.presetCommands['make:build']).toBe('make build');
+    expect(scan.presetCommands['make:test']).toBe('make test');
+    expect(scan.presetCommands['make:%.o']).toBeUndefined();
+    expect(scan.presetCommands['make:VAR']).toBeUndefined();
+  });
+
   it('detects Java build files and adds build tool commands', async () => {
     const root = await tempProject();
     await fs.writeFile(path.join(root, 'pom.xml'), '<project />\n', 'utf8');

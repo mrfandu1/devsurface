@@ -507,6 +507,12 @@ function describePortOwner(owner: ScanResult['ports'][number]['owner']): string 
   return owner.name === null ? ` by PID ${owner.pid}` : ` by ${owner.name} (PID ${owner.pid})`;
 }
 
+function describeBusyPort(port: ScanResult['ports'][number]): string {
+  const suggestion =
+    typeof port.suggestedFreePort === 'number' ? ` — try ${port.suggestedFreePort}` : '';
+  return `in use${describePortOwner(port.owner)}${suggestion}`;
+}
+
 function OverviewMatrix({ project, lastRefreshed }: { project: ScanResult; lastRefreshed: Date }) {
   const packageData = project.packageJson?.data;
   const viteVersion =
@@ -960,10 +966,10 @@ function PortsInspector({
               <code>http://localhost:{port.port}</code>
               <span
                 className={port.inUse ? 'badge bad' : 'badge ok'}
-                title={port.inUse ? `in use${describePortOwner(port.owner)}` : undefined}
+                title={port.inUse ? describeBusyPort(port) : undefined}
               >
                 <i />
-                {port.inUse ? `in use${describePortOwner(port.owner)}` : 'available'}
+                {port.inUse ? describeBusyPort(port) : 'available'}
               </span>
             </div>
           ))
@@ -2095,7 +2101,7 @@ function SectionPage({
                     <strong>{port.port}</strong>
                     <code>http://localhost:{port.port}</code>
                     <span className={port.inUse ? 'text-bad' : 'text-ok'}>
-                      {port.inUse ? `in use${describePortOwner(port.owner)}` : 'available'}
+                      {port.inUse ? describeBusyPort(port) : 'available'}
                     </span>
                   </div>
                 ))}

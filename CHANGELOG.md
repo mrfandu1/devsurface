@@ -1,5 +1,52 @@
 # Changelog
 
+## 0.9.0
+
+- Added Rust project support: `Cargo.toml` is detected as a project language and
+  adds Cargo commands (`cargo run`, `cargo build`, `cargo test`, `cargo check`)
+  to the command list. The passport requirements section now lists the Rust
+  toolchain for Rust projects.
+- Added Makefile target detection: top-level targets in `Makefile`, `makefile`,
+  or `GNUmakefile` (up to 20, skipping pattern rules and variable assignments)
+  appear as runnable `make <target>` commands in a Makefile group.
+- Added PHP support: `composer.json` is detected as a project language and adds
+  `composer install` plus each composer script as a runnable command; Laravel
+  projects with an `artisan` file also get `php artisan serve` on port 8000.
+- Added Ruby support: a `Gemfile` is detected as a project language and adds
+  `bundle install`; Rails projects get `rails server` / `rails db:migrate`
+  (port 3000) and RSpec projects get `bundle exec rspec`.
+- Added Justfile recipe detection: recipes in `justfile`, `Justfile`, or
+  `.justfile` appear as runnable `just <recipe>` commands.
+- Added Taskfile detection: tasks in `Taskfile.yml`/`Taskfile.yaml` (go-task)
+  appear as runnable `task <name>` commands.
+- Added Deno task detection: tasks in `deno.json`/`deno.jsonc` appear as
+  runnable `deno task <name>` commands.
+- Added Dockerfile detection: a root `Dockerfile` adds a
+  `docker build -t <project> .` command even without a compose file.
+- Added doctor check: warns when the running Node major version differs from
+  the version pinned in `.nvmrc` or `.node-version`.
+- Added doctor check: warns when multiple package-manager lockfiles coexist
+  (npm/yarn/pnpm/bun), which causes dependency drift.
+- Added doctor check: errors when a local `.env` exists in a git repo but
+  `.gitignore` does not cover it, since secrets could be committed.
+- Added doctor check: info notice when no CI configuration (GitHub Actions,
+  GitLab CI, CircleCI, Azure Pipelines, Jenkins) is found in a git repo.
+- Added `devsurface ports`: a quick terminal view of every project port, who is
+  using busy ones, and a free alternative to try.
+- Added `devsurface scan --json`: prints the full scan result as JSON for
+  scripts and CI (the update notice is suppressed so output stays parseable).
+- Busy ports now carry a suggested free port. The Ports views in the dashboard
+  and the doctor warning show "in use by X — try 5174" instead of just "in use".
+- Added git hook tooling detection: `.pre-commit-config.yaml` and
+  `lefthook.yml` add install/run commands to the dashboard command list.
+- Added doctor check: warns when package.json's `packageManager` field
+  disagrees with the lockfile that is actually committed.
+- Added doctor notice: points out when the project ships a dev container as a
+  one-click setup path.
+- `cargo run` is now only offered when the crate has a runnable binary
+  (`src/main.rs` or a `[[bin]]` section), so library-only crates and virtual
+  workspaces no longer show a command that would fail.
+
 ## 0.8.0
 
 - Added Project Passport: `devsurface passport` generates a single self-contained

@@ -1,7 +1,7 @@
 {
   "name": "devsurface",
-  "version": "0.8.0",
-  "description": "Zero-config local developer dashboard and CLI for Node.js, Python, Go, and Java repositories. Detect scripts, env files, ports, Docker services, frameworks, logs, and repo health.",
+  "version": "0.9.0",
+  "description": "Zero-config local developer dashboard and CLI for Node.js, Python, Go, Java, and Rust repositories. Detect scripts, env files, ports, Docker services, frameworks, logs, and repo health.",
   "type": "module",
   "license": "MIT",
   "author": "mrfandu1",

@@ -215,6 +215,331 @@ function goPresets(language: ProjectLanguageInfo): PresetInfo[] {
   ];
 }
 
+async function rustPresets(root: string, language: ProjectLanguageInfo): Promise<PresetInfo[]> {
+  if (!language.detected.includes('rust')) {
+    return [];
+  }
+
+  const commands: Record<string, string> = {
+    'cargo:build': 'cargo build',
+    'cargo:test': 'cargo test',
+    'cargo:check': 'cargo check'
+  };
+
+  // Library-only crates and virtual workspaces have nothing to `cargo run`.
+  const cargoToml = (await readIfPresent(root, 'Cargo.toml')) ?? '';
+  const hasMain =
+    (await readIfPresent(root, path.join('src', 'main.rs'))) !== null ||
+    /^\[\[bin\]\]/m.test(cargoToml);
+  if (hasMain) {
+    commands['cargo:run'] = 'cargo run';
+  }
+
+  return [
+    completePreset({
+      name: 'rust',
+      label: 'Rust',
+      commands,
+      groups: {
+        Rust: Object.keys(commands)
+      }
+    })
+  ];
+}
+
+async function phpPresets(root: string, language: ProjectLanguageInfo): Promise<PresetInfo[]> {
+  if (!language.detected.includes('php')) {
+    return [];
+  }
+
+  const commands: Record<string, string> = {
+    'composer:install': 'composer install'
+  };
+
+  const composer = await readIfPresent(root, 'composer.json');
+  if (composer !== null) {
+    try {
+      const data = JSON.parse(composer) as { scripts?: Record<string, unknown> };
+      for (const name of Object.keys(data.scripts ?? {}).slice(0, 20)) {
+        commands[`composer:${name}`] = `composer run ${name}`;
+      }
+    } catch {
+      // Malformed composer.json still gets the install command.
+    }
+  }
+
+  const ports: number[] = [];
+  if ((await readIfPresent(root, 'artisan')) !== null) {
+    commands['artisan:serve'] = 'php artisan serve --host 127.0.0.1';
+    ports.push(8000);
+  }
+
+  return [
+    completePreset({
+      name: 'php',
+      label: 'PHP',
+      commands,
+      groups: { PHP: Object.keys(commands) },
+      ports
+    })
+  ];
+}
+
+async function rubyPresets(root: string, language: ProjectLanguageInfo): Promise<PresetInfo[]> {
+  if (!language.detected.includes('ruby')) {
+    return [];
+  }
+
+  const commands: Record<string, string> = {
+    'bundle:install': 'bundle install'
+  };
+  const ports: number[] = [];
+
+  const gemfile = ((await readIfPresent(root, 'Gemfile')) ?? '').toLowerCase();
+  if (gemfile.includes('rails')) {
+    commands['rails:server'] = 'bundle exec rails server -b 127.0.0.1';
+    commands['rails:migrate'] = 'bundle exec rails db:migrate';
+    ports.push(3000);
+  }
+  if (gemfile.includes('rspec')) {
+    commands['rspec:test'] = 'bundle exec rspec';
+  }
+
+  return [
+    completePreset({
+      name: 'ruby',
+      label: 'Ruby',
+      commands,
+      groups: { Ruby: Object.keys(commands) },
+      ports
+    })
+  ];
+}
+
+// Recipes like `build:` or `build arg1:` at column zero; skips settings and comments.
+const justfileRecipePattern = /^([A-Za-z_][\w-]*)(?:\s+[^:=]*)?:(?!=)/;
+
+async function justfilePresets(root: string): Promise<PresetInfo[]> {
+  const justfile =
+    (await readIfPresent(root, 'justfile')) ??
+    (await readIfPresent(root, 'Justfile')) ??
+    (await readIfPresent(root, '.justfile'));
+  if (justfile === null) {
+    return [];
+  }
+
+  const recipes: string[] = [];
+  for (const line of justfile.split(/\r?\n/)) {
+    const match = justfileRecipePattern.exec(line);
+    if (
+      match !== null &&
+      match[1] !== 'set' &&
+      match[1] !== 'alias' &&
+      !recipes.includes(match[1])
+    ) {
+      recipes.push(match[1]);
+    }
+    if (recipes.length >= 20) {
+      break;
+    }
+  }
+  if (recipes.length === 0) {
+    return [];
+  }
+
+  const commands: Record<string, string> = {};
+  for (const recipe of recipes) {
+    commands[`just:${recipe}`] = `just ${recipe}`;
+  }
+
+  return [
+    completePreset({
+      name: 'just',
+      label: 'Justfile',
+      commands,
+      groups: { Justfile: Object.keys(commands) }
+    })
+  ];
+}
+
+async function taskfilePresets(root: string): Promise<PresetInfo[]> {
+  const taskfile =
+    (await readIfPresent(root, 'Taskfile.yml')) ?? (await readIfPresent(root, 'Taskfile.yaml'));
+  if (taskfile === null) {
+    return [];
+  }
+
+  // Task names are two-space-indented keys under the top-level `tasks:` block.
+  const tasks: string[] = [];
+  let inTasks = false;
+  for (const line of taskfile.split(/\r?\n/)) {
+    if (/^tasks:\s*$/.test(line)) {
+      inTasks = true;
+      continue;
+    }
+    if (inTasks && /^\S/.test(line)) {
+      break;
+    }
+    const match = inTasks ? /^ {2}([A-Za-z_][\w:-]*):\s*$/.exec(line) : null;
+    if (match !== null && !tasks.includes(match[1])) {
+      tasks.push(match[1]);
+    }
+    if (tasks.length >= 20) {
+      break;
+    }
+  }
+  if (tasks.length === 0) {
+    return [];
+  }
+
+  const commands: Record<string, string> = {};
+  for (const task of tasks) {
+    commands[`task:${task}`] = `task ${task}`;
+  }
+
+  return [
+    completePreset({
+      name: 'taskfile',
+      label: 'Taskfile',
+      commands,
+      groups: { Taskfile: Object.keys(commands) }
+    })
+  ];
+}
+
+async function denoPresets(root: string): Promise<PresetInfo[]> {
+  const source =
+    (await readIfPresent(root, 'deno.json')) ?? (await readIfPresent(root, 'deno.jsonc'));
+  if (source === null) {
+    return [];
+  }
+
+  let tasks: string[] = [];
+  try {
+    // Strip line comments so deno.jsonc parses; good enough for task names.
+    const data = JSON.parse(source.replace(/^\s*\/\/.*$/gm, '')) as {
+      tasks?: Record<string, unknown>;
+    };
+    tasks = Object.keys(data.tasks ?? {}).slice(0, 20);
+  } catch {
+    return [];
+  }
+  if (tasks.length === 0) {
+    return [];
+  }
+
+  const commands: Record<string, string> = {};
+  for (const task of tasks) {
+    commands[`deno:${task}`] = `deno task ${task}`;
+  }
+
+  return [
+    completePreset({
+      name: 'deno',
+      label: 'Deno',
+      commands,
+      groups: { Deno: Object.keys(commands) }
+    })
+  ];
+}
+
+async function gitHookPresets(root: string): Promise<PresetInfo[]> {
+  const commands: Record<string, string> = {};
+
+  if ((await readIfPresent(root, '.pre-commit-config.yaml')) !== null) {
+    commands['pre-commit:install'] = 'pre-commit install';
+    commands['pre-commit:run'] = 'pre-commit run --all-files';
+  }
+
+  if (
+    (await readIfPresent(root, 'lefthook.yml')) !== null ||
+    (await readIfPresent(root, 'lefthook.yaml')) !== null
+  ) {
+    commands['lefthook:install'] = 'lefthook install';
+    commands['lefthook:run'] = 'lefthook run pre-commit';
+  }
+
+  if (Object.keys(commands).length === 0) {
+    return [];
+  }
+
+  return [
+    completePreset({
+      name: 'git-hooks',
+      label: 'Git hooks',
+      commands,
+      groups: { 'Git hooks': Object.keys(commands) }
+    })
+  ];
+}
+
+async function dockerfilePresets(root: string, projectName: string): Promise<PresetInfo[]> {
+  if ((await readIfPresent(root, 'Dockerfile')) === null) {
+    return [];
+  }
+
+  const image = projectName
+    .toLowerCase()
+    .replace(/[^a-z0-9_.-]+/g, '-')
+    .replace(/^[-._]+/, '')
+    .replace(/[-._]+$/, '');
+  const tag = image.length > 0 ? image : 'app';
+
+  return [
+    completePreset({
+      name: 'dockerfile',
+      label: 'Docker image',
+      commands: {
+        'docker:build': `docker build -t ${tag} .`
+      },
+      groups: { Docker: ['docker:build'] }
+    })
+  ];
+}
+
+// Targets like `build:` at column zero; skips pattern rules, dot targets, and variable lines.
+const makefileTargetPattern = /^([A-Za-z0-9][\w.-]*)\s*:(?!=)([^=]*)$/;
+
+async function makefilePresets(root: string): Promise<PresetInfo[]> {
+  const makefile =
+    (await readIfPresent(root, 'Makefile')) ??
+    (await readIfPresent(root, 'makefile')) ??
+    (await readIfPresent(root, 'GNUmakefile'));
+  if (makefile === null) {
+    return [];
+  }
+
+  const targets: string[] = [];
+  for (const line of makefile.split(/\r?\n/)) {
+    const match = makefileTargetPattern.exec(line);
+    if (match !== null && !targets.includes(match[1])) {
+      targets.push(match[1]);
+    }
+    if (targets.length >= 20) {
+      break;
+    }
+  }
+  if (targets.length === 0) {
+    return [];
+  }
+
+  const commands: Record<string, string> = {};
+  for (const target of targets) {
+    commands[`make:${target}`] = `make ${target}`;
+  }
+
+  return [
+    completePreset({
+      name: 'make',
+      label: 'Makefile',
+      commands,
+      groups: {
+        Makefile: Object.keys(commands)
+      }
+    })
+  ];
+}
+
 async function javaPresets(language: ProjectLanguageInfo): Promise<PresetInfo[]> {
   if (!language.detected.includes('java')) {
     return [];
@@ -246,11 +571,21 @@ export async function detectPresets(options: {
   framework: FrameworkInfo | null;
   language: ProjectLanguageInfo;
 }): Promise<PresetInfo[]> {
+  const projectName = options.packageJson?.data.name ?? path.basename(path.resolve(options.root));
   return [
     ...nodePresets(options.framework, options.packageJson),
     ...(await pythonPresets(options.root, options.language)),
     ...goPresets(options.language),
-    ...(await javaPresets(options.language))
+    ...(await rustPresets(options.root, options.language)),
+    ...(await phpPresets(options.root, options.language)),
+    ...(await rubyPresets(options.root, options.language)),
+    ...(await javaPresets(options.language)),
+    ...(await makefilePresets(options.root)),
+    ...(await justfilePresets(options.root)),
+    ...(await taskfilePresets(options.root)),
+    ...(await denoPresets(options.root)),
+    ...(await gitHookPresets(options.root)),
+    ...(await dockerfilePresets(options.root, projectName))
   ].filter(
     (preset) =>
       Object.keys(preset.commands).length > 0 ||

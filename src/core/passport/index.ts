@@ -261,6 +261,15 @@ function requirementsSection(scan: ScanResult): string {
   if (scan.language.detected.includes('go')) {
     requirements.push({ name: 'Go', detail: 'a recent Go toolchain' });
   }
+  if (scan.language.detected.includes('php')) {
+    requirements.push({ name: 'PHP', detail: 'a recent PHP version with Composer' });
+  }
+  if (scan.language.detected.includes('ruby')) {
+    requirements.push({ name: 'Ruby', detail: 'a recent Ruby version with Bundler' });
+  }
+  if (scan.language.detected.includes('rust')) {
+    requirements.push({ name: 'Rust', detail: 'a recent Rust toolchain (rustup)' });
+  }
   if (scan.language.detected.includes('java')) {
     requirements.push({ name: 'Java', detail: 'a JDK matching the build files' });
   }

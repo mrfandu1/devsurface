@@ -71,6 +71,17 @@ export async function probePort(port: number): Promise<PortProbe> {
   });
 }
 
+/** Find the next free port after `start`, so port-conflict warnings can suggest an alternative. */
+export async function findFreePort(start: number, attempts = 20): Promise<number | null> {
+  const last = Math.min(start + attempts, 65535);
+  for (let port = start + 1; port <= last; port += 1) {
+    if (!(await probePort(port)).inUse) {
+      return port;
+    }
+  }
+  return null;
+}
+
 export async function detectPorts(ports: number[]): Promise<PortProbe[] | null> {
   const normalized = uniquePorts(ports).slice(0, MAX_PORT_PROBES);
   if (normalized.length === 0) {

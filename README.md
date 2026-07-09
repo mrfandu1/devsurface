@@ -41,7 +41,8 @@
 
 DevSurface is a zero-config CLI and local browser dashboard for understanding,
 configuring, and running unfamiliar repositories. It detects Node.js package scripts,
-Python, Go, and Java project commands, environment files, occupied ports, Docker
+Python, Go, Java, Rust, PHP, and Ruby project commands, Makefile / Justfile /
+Taskfile / Deno tasks, environment files, occupied ports, Docker
 Compose services, frameworks, live command logs, repo health checks, and
 multi-workspace projects.
 
@@ -155,7 +156,8 @@ Run DevSurface without installing it globally:
 | Command                            | Description                                                          |
 | ---------------------------------- | -------------------------------------------------------------------- |
 | `devsurface`                       | Scan the current project, start the dashboard, and open the browser. |
-| `devsurface scan`                  | Print detected project information to the terminal.                  |
+| `devsurface scan`                  | Print detected project information (`--json` for machine output).    |
+| `devsurface ports`                 | Show project ports, what is using them, and free alternatives.       |
 | `devsurface doctor`                | Print setup and repo health warnings.                                |
 | `devsurface init`                  | Create a starter `devsurface.config.json`.                           |
 | `devsurface passport`              | Generate a shareable HTML onboarding report (Project Passport).      |

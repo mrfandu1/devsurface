@@ -26,3 +26,6 @@ SECURITY-AUDIT*.md
 /security-notes/
 /audit/
 /threat-model/
+
+# Local Claude Code settings
+.claude/settings.local.json

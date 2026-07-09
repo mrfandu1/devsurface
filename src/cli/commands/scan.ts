@@ -34,6 +34,14 @@ export function printScanResult(scan: ScanResult): void {
   }
 }
 
-export async function scanCommand(cwd = process.cwd()): Promise<void> {
-  printScanResult(await scanProject(cwd));
+export async function scanCommand(
+  cwd = process.cwd(),
+  options: { json?: boolean } = {}
+): Promise<void> {
+  const scan = await scanProject(cwd);
+  if (options.json === true) {
+    console.log(JSON.stringify(scan, null, 2));
+    return;
+  }
+  printScanResult(scan);
 }

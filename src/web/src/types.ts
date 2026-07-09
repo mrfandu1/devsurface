@@ -1,5 +1,5 @@
 export type Severity = 'error' | 'warning' | 'info';
-export type ProjectLanguage = 'node' | 'python' | 'go' | 'java';
+export type ProjectLanguage = 'node' | 'python' | 'go' | 'java' | 'rust' | 'php' | 'ruby';
 
 export interface EnvKeyStatus {
   key: string;
@@ -70,6 +70,7 @@ export interface ScanResult {
     port: number;
     inUse: boolean;
     owner?: { pid: number; name: string | null } | null;
+    suggestedFreePort?: number | null;
   }>;
   readme: {
     exists: boolean;

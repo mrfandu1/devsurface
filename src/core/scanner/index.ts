@@ -9,7 +9,12 @@ import { detectGit } from './git.js';
 import { detectProjectLanguage } from './language.js';
 import { detectPackageManager } from './packageManager.js';
 import { readPackageJson } from './packageJson.js';
-import { defaultPortsForFramework, detectPorts, inferPortsFromScripts } from './ports.js';
+import {
+  defaultPortsForFramework,
+  detectPorts,
+  findFreePort,
+  inferPortsFromScripts
+} from './ports.js';
 import { findPortOwners } from './portOwner.js';
 import { detectPresets, mergePresetCommands, mergePresetGroups } from './presets.js';
 import { extractScripts } from './scripts.js';
@@ -80,6 +85,7 @@ export async function scanProject(root = process.cwd()): Promise<ScanResult> {
     for (const probe of ports ?? []) {
       if (probe.inUse) {
         probe.owner = owners.get(probe.port) ?? null;
+        probe.suggestedFreePort = await findFreePort(probe.port);
       }
     }
   }

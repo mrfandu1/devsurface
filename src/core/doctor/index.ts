@@ -129,12 +129,22 @@ export async function runDoctor(root = process.cwd(), scan?: ScanResult): Promis
   }
 
   for (const port of result.ports.filter((probe) => probe.inUse)) {
+    const owner =
+      port.owner == null
+        ? 'Something'
+        : port.owner.name === null
+          ? `PID ${port.owner.pid}`
+          : `${port.owner.name} (PID ${port.owner.pid})`;
+    const suggestion =
+      typeof port.suggestedFreePort === 'number'
+        ? ` Port ${port.suggestedFreePort} is free — try that instead.`
+        : '';
     warnings.push(
       warning(
         `port-${port.port}-in-use`,
         'error',
         `Port ${port.port} is already in use`,
-        `Something is already bound to 127.0.0.1:${port.port}.`
+        `${owner} is already bound to 127.0.0.1:${port.port}.${suggestion}`
       )
     );
   }
@@ -170,6 +180,124 @@ export async function runDoctor(root = process.cwd(), scan?: ScanResult): Promis
         'package.json does not define a build script.'
       )
     );
+  }
+
+  // Pinned Node version vs the Node actually running devsurface.
+  if (isNodeProject) {
+    const pinned =
+      (await readIfPresent(path.join(root, '.nvmrc'))) ??
+      (await readIfPresent(path.join(root, '.node-version')));
+    const pinnedMajor = pinned === null ? null : /^v?(\d+)/.exec(pinned.trim())?.[1];
+    const runningMajor = /^v?(\d+)/.exec(process.version)?.[1];
+    if (pinnedMajor !== undefined && pinnedMajor !== null && pinnedMajor !== runningMajor) {
+      warnings.push(
+        warning(
+          'node-version-mismatch',
+          'warning',
+          'Node version differs from the pinned version',
+          `This project pins Node ${pinned?.trim()} but Node ${process.version} is running. Switch versions (for example with nvm or fnm) before installing or running.`
+        )
+      );
+    }
+  }
+
+  // Multiple package-manager lockfiles usually mean contributors used different tools.
+  const lockfiles = ['package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'bun.lockb', 'bun.lock'];
+  const presentLockfiles: string[] = [];
+  for (const lockfile of lockfiles) {
+    if (await pathExists(path.join(root, lockfile))) {
+      presentLockfiles.push(lockfile);
+    }
+  }
+  if (presentLockfiles.length > 1) {
+    warnings.push(
+      warning(
+        'multiple-lockfiles',
+        'warning',
+        'Multiple lockfiles found',
+        `Found ${presentLockfiles.join(', ')}. Keep only the lockfile for the package manager this project uses to avoid dependency drift.`
+      )
+    );
+  }
+
+  // A local .env that .gitignore does not cover is one commit away from leaking secrets.
+  if (result.env?.hasLocal && (await pathExists(path.join(root, '.git')))) {
+    const gitignore = (await readIfPresent(path.join(root, '.gitignore'))) ?? '';
+    const coversEnv = gitignore
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .some((line) => line === '.env' || line === '.env*' || line === '*.env' || line === '/.env');
+    if (!coversEnv) {
+      warnings.push(
+        warning(
+          'env-not-gitignored',
+          'error',
+          '.env is not listed in .gitignore',
+          'A local .env exists but .gitignore does not cover it, so secrets could be committed. Add ".env" to .gitignore.'
+        )
+      );
+    }
+  }
+
+  // A pinned packageManager field that disagrees with the detected lockfile confuses installs.
+  const pinnedManager = result.packageJson?.data.packageManager?.split('@')[0]?.trim();
+  if (
+    pinnedManager !== undefined &&
+    pinnedManager.length > 0 &&
+    result.packageManager !== null &&
+    pinnedManager !== result.packageManager
+  ) {
+    warnings.push(
+      warning(
+        'package-manager-mismatch',
+        'warning',
+        'Package manager mismatch',
+        `package.json pins "${pinnedManager}" via the packageManager field, but the lockfile belongs to ${result.packageManager}. Use ${pinnedManager} so installs match the lockfile the project expects.`
+      )
+    );
+  }
+
+  // Dev containers are a one-click setup path worth pointing out.
+  if (
+    (await pathExists(path.join(root, '.devcontainer', 'devcontainer.json'))) ||
+    (await pathExists(path.join(root, '.devcontainer.json')))
+  ) {
+    warnings.push(
+      warning(
+        'devcontainer-available',
+        'info',
+        'Dev container available',
+        'This project ships a dev container. Opening it in VS Code ("Reopen in Container") or GitHub Codespaces gives a ready-made environment.'
+      )
+    );
+  }
+
+  // Repos without any CI config get a gentle nudge, not an error.
+  if (await pathExists(path.join(root, '.git'))) {
+    const ciMarkers = [
+      path.join('.github', 'workflows'),
+      '.gitlab-ci.yml',
+      path.join('.circleci', 'config.yml'),
+      'azure-pipelines.yml',
+      'Jenkinsfile'
+    ];
+    let hasCi = false;
+    for (const marker of ciMarkers) {
+      if (await pathExists(path.join(root, marker))) {
+        hasCi = true;
+        break;
+      }
+    }
+    if (!hasCi) {
+      warnings.push(
+        warning(
+          'no-ci-config',
+          'info',
+          'No CI configuration detected',
+          'No GitHub Actions, GitLab CI, CircleCI, Azure Pipelines, or Jenkins config was found. Automated checks catch broken builds before review.'
+        )
+      );
+    }
   }
 
   return warnings;

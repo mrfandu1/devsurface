@@ -4,6 +4,7 @@ import { doctorCommand } from './commands/doctor.js';
 import { initCommand } from './commands/init.js';
 import { onboardCommand } from './commands/onboard.js';
 import { passportCommand } from './commands/passport.js';
+import { portsCommand } from './commands/ports.js';
 import { runCommand } from './commands/run.js';
 import { scanCommand } from './commands/scan.js';
 import { startCommand } from './commands/start.js';
@@ -27,10 +28,12 @@ function toPort(value: string): number {
   return port;
 }
 
-function handle(command: Promise<void>): void {
+function handle(command: Promise<void>, options: { updateNotice?: boolean } = {}): void {
   command
     .then(async () => {
-      await printUpdateNotice(DEV_SURFACE_VERSION);
+      if (options.updateNotice !== false) {
+        await printUpdateNotice(DEV_SURFACE_VERSION);
+      }
     })
     .catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
@@ -98,8 +101,19 @@ workspace
 program
   .command('scan')
   .description('Print detected project info.')
+  .option('--json', 'print the full scan result as JSON')
+  .action((options: { json?: boolean }) => {
+    // JSON output must stay machine-parseable, so skip the update notice.
+    handle(scanCommand(process.cwd(), { json: options.json }), {
+      updateNotice: options.json !== true
+    });
+  });
+
+program
+  .command('ports')
+  .description('Show project ports, what is using them, and free alternatives.')
   .action(() => {
-    handle(scanCommand(process.cwd()));
+    handle(portsCommand(process.cwd()));
   });
 
 program

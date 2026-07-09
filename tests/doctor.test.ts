@@ -18,6 +18,90 @@ async function tempProject(): Promise<string> {
 }
 
 describe('doctor', () => {
+  it('warns when the running Node major differs from .nvmrc', async () => {
+    const root = await tempProject();
+    await writeJson(path.join(root, 'package.json'), { name: 'nvmrc-demo', scripts: {} });
+    await fs.writeFile(path.join(root, '.nvmrc'), 'v1\n', 'utf8');
+
+    const warningIds = (await runDoctor(root)).map((warning) => warning.id);
+
+    expect(warningIds).toContain('node-version-mismatch');
+  });
+
+  it('warns when multiple lockfiles are present', async () => {
+    const root = await tempProject();
+    await writeJson(path.join(root, 'package.json'), { name: 'lockfile-demo', scripts: {} });
+    await fs.writeFile(path.join(root, 'package-lock.json'), '{}\n', 'utf8');
+    await fs.writeFile(path.join(root, 'yarn.lock'), '\n', 'utf8');
+
+    const warningIds = (await runDoctor(root)).map((warning) => warning.id);
+
+    expect(warningIds).toContain('multiple-lockfiles');
+  });
+
+  it('flags a local .env that .gitignore does not cover', async () => {
+    const root = await tempProject();
+    await writeJson(path.join(root, 'package.json'), { name: 'env-git-demo', scripts: {} });
+    await fs.writeFile(path.join(root, '.env.example'), 'API_KEY=\n', 'utf8');
+    await fs.writeFile(path.join(root, '.env'), 'API_KEY=secret\n', 'utf8');
+    await mkdirp(path.join(root, '.git'));
+    await fs.writeFile(path.join(root, '.gitignore'), 'node_modules/\n', 'utf8');
+
+    const warningIds = (await runDoctor(root)).map((warning) => warning.id);
+
+    expect(warningIds).toContain('env-not-gitignored');
+  });
+
+  it('does not flag .env when .gitignore covers it, and notes missing CI', async () => {
+    const root = await tempProject();
+    await writeJson(path.join(root, 'package.json'), { name: 'env-ok-demo', scripts: {} });
+    await fs.writeFile(path.join(root, '.env'), 'API_KEY=secret\n', 'utf8');
+    await mkdirp(path.join(root, '.git'));
+    await fs.writeFile(path.join(root, '.gitignore'), '.env\n', 'utf8');
+
+    const warnings = await runDoctor(root);
+    const warningIds = warnings.map((warning) => warning.id);
+
+    expect(warningIds).not.toContain('env-not-gitignored');
+    expect(warningIds).toContain('no-ci-config');
+  });
+
+  it('does not report missing CI when a workflow exists', async () => {
+    const root = await tempProject();
+    await writeJson(path.join(root, 'package.json'), { name: 'ci-demo', scripts: {} });
+    await mkdirp(path.join(root, '.git'));
+    await mkdirp(path.join(root, '.github', 'workflows'));
+
+    const warningIds = (await runDoctor(root)).map((warning) => warning.id);
+
+    expect(warningIds).not.toContain('no-ci-config');
+  });
+
+  it('warns when the packageManager field disagrees with the lockfile', async () => {
+    const root = await tempProject();
+    await writeJson(path.join(root, 'package.json'), {
+      name: 'pm-mismatch-demo',
+      scripts: {},
+      packageManager: 'pnpm@9.0.0'
+    });
+    await fs.writeFile(path.join(root, 'package-lock.json'), '{}\n', 'utf8');
+
+    const warningIds = (await runDoctor(root)).map((warning) => warning.id);
+
+    expect(warningIds).toContain('package-manager-mismatch');
+  });
+
+  it('points out an available dev container', async () => {
+    const root = await tempProject();
+    await writeJson(path.join(root, 'package.json'), { name: 'devcontainer-demo', scripts: {} });
+    await mkdirp(path.join(root, '.devcontainer'));
+    await fs.writeFile(path.join(root, '.devcontainer', 'devcontainer.json'), '{}\n', 'utf8');
+
+    const warningIds = (await runDoctor(root)).map((warning) => warning.id);
+
+    expect(warningIds).toContain('devcontainer-available');
+  });
+
   it('reports core onboarding warnings', async () => {
     const root = await tempProject();
     await writeJson(path.join(root, 'package.json'), {

@@ -5,7 +5,10 @@ import type { PackageJsonInfo, ProjectLanguage, ProjectLanguageInfo } from '../t
 const languageFiles: Array<{ language: ProjectLanguage; candidates: string[] }> = [
   { language: 'python', candidates: ['requirements.txt', 'pyproject.toml', 'Pipfile'] },
   { language: 'go', candidates: ['go.mod'] },
-  { language: 'java', candidates: ['pom.xml', 'build.gradle', 'build.gradle.kts'] }
+  { language: 'java', candidates: ['pom.xml', 'build.gradle', 'build.gradle.kts'] },
+  { language: 'rust', candidates: ['Cargo.toml'] },
+  { language: 'php', candidates: ['composer.json'] },
+  { language: 'ruby', candidates: ['Gemfile'] }
 ];
 
 function isWithinRoot(root: string, target: string): boolean {

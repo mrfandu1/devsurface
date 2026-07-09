@@ -1,5 +1,5 @@
 export type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun';
-export type ProjectLanguage = 'node' | 'python' | 'go' | 'java';
+export type ProjectLanguage = 'node' | 'python' | 'go' | 'java' | 'rust' | 'php' | 'ruby';
 
 export type WarningSeverity = 'error' | 'warning' | 'info';
 
@@ -13,6 +13,7 @@ export interface PackageJsonData {
   optionalDependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;
   engines?: Record<string, string>;
+  packageManager?: string;
 }
 
 export interface PackageJsonInfo {
@@ -95,6 +96,8 @@ export interface PortProbe {
   inUse: boolean;
   /** Process listening on the port, when it can be identified. */
   owner?: PortOwner | null;
+  /** Next free port after this one, filled in when the port is busy. */
+  suggestedFreePort?: number | null;
 }
 
 export interface SetupGuideStep {
