@@ -1,1 +1,1 @@
-export const DEV_SURFACE_VERSION = '0.9.0';
+export const DEV_SURFACE_VERSION = '1.0.0';

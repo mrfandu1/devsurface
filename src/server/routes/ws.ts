@@ -3,6 +3,11 @@ import type { IncomingMessage } from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
 import type { ProcessManager } from '../../core/process/manager.js';
 import type { Hub } from '../../core/hub/runtime.js';
+import { watchWorkspace } from '../../core/hub/watcher.js';
+import { historyEntryFromSnapshot } from '../../core/history/index.js';
+import { runDoctor } from '../../core/doctor/index.js';
+import { buildOnboardingPlan } from '../../core/onboarding/index.js';
+import { scanProject } from '../../core/scanner/index.js';
 import type { ManagedProcessSnapshot, ProcessLogEvent } from '../../core/types.js';
 import { isAllowedLocalHostHeader, isAllowedLocalOrigin } from '../localAccess.js';
 import { getListenHost, isAllowedClientConnection } from '../listenConfig.js';
@@ -88,6 +93,8 @@ export function setupWebSocket(server: Server, processManager: ProcessManager): 
   return wss;
 }
 
+const HEARTBEAT_INTERVAL_MS = 30_000;
+
 // Hub-aware WebSocket: each connection is scoped to a workspace via ?workspace=<id>
 export function setupHubWebSocket(server: Server, hub: Hub): WebSocketServer {
   const wss = new WebSocketServer({
@@ -98,8 +105,54 @@ export function setupHubWebSocket(server: Server, hub: Hub): WebSocketServer {
 
   const clientWorkspaces = new WeakMap<WebSocket, string>();
   const attachedManagers = new Set<string>();
+  const socketsAlive = new WeakMap<WebSocket, boolean>();
+  const rescanInFlight = new Set<string>();
 
-  function attachManager(workspaceId: string, processManager: ProcessManager): void {
+  // Heartbeat: ping every client periodically and drop the ones that never
+  // pong back, so half-dead connections don't accumulate.
+  const heartbeat = setInterval(() => {
+    for (const client of wss.clients) {
+      if (socketsAlive.get(client) === false) {
+        client.terminate();
+        continue;
+      }
+      socketsAlive.set(client, false);
+      client.ping();
+    }
+  }, HEARTBEAT_INTERVAL_MS);
+  wss.on('close', () => clearInterval(heartbeat));
+
+  function broadcastToAll(payload: unknown): void {
+    const serialized = JSON.stringify(payload);
+    for (const client of wss.clients) {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(serialized);
+      }
+    }
+  }
+
+  /**
+   * Rescan a workspace server-side and push the full result (scan, health,
+   * onboarding) so dashboards update without another HTTP round-trip.
+   */
+  async function pushProjectUpdate(workspaceId: string, root: string): Promise<void> {
+    if (rescanInFlight.has(workspaceId)) {
+      return;
+    }
+    rescanInFlight.add(workspaceId);
+    try {
+      const project = await scanProject(root);
+      const health = await runDoctor(root, project);
+      const onboarding = buildOnboardingPlan(project, health);
+      broadcastToWorkspace(workspaceId, { type: 'project-updated', project, health, onboarding });
+    } catch {
+      // Scan failures fall back to the dashboard's polling refresh.
+    } finally {
+      rescanInFlight.delete(workspaceId);
+    }
+  }
+
+  function attachManager(workspaceId: string, processManager: ProcessManager, root: string): void {
     if (attachedManagers.has(workspaceId)) {
       return;
     }
@@ -111,8 +164,33 @@ export function setupHubWebSocket(server: Server, hub: Hub): WebSocketServer {
 
     processManager.on('process', (processInfo: ManagedProcessSnapshot) => {
       broadcastToWorkspace(workspaceId, { type: 'process', process: processInfo });
+
+      // Finished runs land in the history store; mirror them to dashboards so
+      // Recent Runs updates live.
+      const entry = historyEntryFromSnapshot(processInfo);
+      if (entry !== null) {
+        broadcastToWorkspace(workspaceId, { type: 'run-recorded', entry });
+      }
+    });
+
+    // A scan-relevant file changed on disk: hint immediately, then push the
+    // fresh scan once it is ready.
+    watchWorkspace(root, (file) => {
+      broadcastToWorkspace(workspaceId, { type: 'project-changed', file });
+      void pushProjectUpdate(workspaceId, root);
     });
   }
+
+  hub.events.on('workspaces-changed', () => {
+    broadcastToAll({ type: 'workspaces-changed' });
+  });
+
+  hub.events.on('workspace-updated', (workspaceId: string) => {
+    const runtime = hub.get(workspaceId);
+    if (runtime !== null) {
+      void pushProjectUpdate(workspaceId, runtime.root);
+    }
+  });
 
   function broadcastToWorkspace(workspaceId: string, payload: unknown): void {
     const serialized = JSON.stringify(payload);
@@ -138,7 +216,9 @@ export function setupHubWebSocket(server: Server, hub: Hub): WebSocketServer {
 
     const runtime = hub.ensure(entry);
     clientWorkspaces.set(socket, workspaceId);
-    attachManager(workspaceId, runtime.processManager);
+    socketsAlive.set(socket, true);
+    socket.on('pong', () => socketsAlive.set(socket, true));
+    attachManager(workspaceId, runtime.processManager, runtime.root);
 
     socket.send(
       JSON.stringify({

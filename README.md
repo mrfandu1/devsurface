@@ -93,16 +93,17 @@ DevSurface is useful when you need to:
 
 DevSurface detects projects using:
 
-- Next.js
-- Vite
-- Express
-- Fastify
-- NestJS
-- Remix
-- Prisma
+- Meta-frameworks: Next.js, Nuxt, SvelteKit, Remix, Astro, Gatsby, Docusaurus,
+  RedwoodJS
+- UI libraries: React, Vue, Svelte, Solid, Angular
+- Servers: Express, Fastify, NestJS, AdonisJS, Koa, hapi, Hono, tRPC
+- Apps: Electron, Tauri, Expo, React Native
+- Data and tooling: Prisma, Drizzle, Vite, Storybook, Tailwind CSS
+- Monorepos: npm/yarn/bun workspaces, pnpm workspaces, Turborepo, Nx, Lerna
 - Python: FastAPI/Uvicorn, Flask, Django
 - Go modules
 - Java: Maven and Gradle
+- Rust (Cargo), PHP (Composer/Laravel), Ruby (Bundler/Rails)
 - Docker Compose
 - npm, pnpm, Yarn, and Bun
 
@@ -153,19 +154,31 @@ Run DevSurface without installing it globally:
 | npm     | `npx devsurface`  |
 | Bun     | `bunx devsurface` |
 
-| Command                            | Description                                                          |
-| ---------------------------------- | -------------------------------------------------------------------- |
-| `devsurface`                       | Scan the current project, start the dashboard, and open the browser. |
-| `devsurface scan`                  | Print detected project information (`--json` for machine output).    |
-| `devsurface ports`                 | Show project ports, what is using them, and free alternatives.       |
-| `devsurface doctor`                | Print setup and repo health warnings.                                |
-| `devsurface init`                  | Create a starter `devsurface.config.json`.                           |
-| `devsurface passport`              | Generate a shareable HTML onboarding report (Project Passport).      |
-| `devsurface run <script>`          | Run a package script and stream output.                              |
-| `devsurface serve`                 | Start the multi-workspace hub server.                                |
-| `devsurface workspace add [path]`  | Register a project directory with the local hub.                     |
-| `devsurface workspace list`        | List registered hub workspaces.                                      |
-| `devsurface workspace remove <id>` | Remove a workspace from the hub registry.                            |
+| Command                            | Description                                                           |
+| ---------------------------------- | --------------------------------------------------------------------- |
+| `devsurface`                       | Scan the current project, start the dashboard, and open the browser.  |
+| `devsurface scan`                  | Print detected project information (`--json`, `--markdown`).          |
+| `devsurface ports`                 | Show project ports, what is using them, and free alternatives.        |
+| `devsurface doctor`                | Print setup and repo health warnings (`--json`, `--fail-on`).         |
+| `devsurface verify`                | Run the quality scripts (lint, typecheck, test, build) in sequence.   |
+| `devsurface explain [script]`      | Explain package scripts in plain English (`--json`).                  |
+| `devsurface history`               | Show recent script runs recorded by the dashboard (`--json`).         |
+| `devsurface badge`                 | Generate a setup-readiness SVG badge for the README.                  |
+| `devsurface ports --free <port>`   | Stop the process occupying a port (with safety guardrails).           |
+| `devsurface env check`             | Report missing/empty env keys; exits nonzero for CI (`--json`).       |
+| `devsurface env sync`              | Append keys from `.env.example` missing in `.env` (never overwrites). |
+| `devsurface info`                  | Show version, data locations, and workspace count.                    |
+| `devsurface status`                | Check whether a local hub is running (version, uptime, workspaces).   |
+| `devsurface init`                  | Create a starter `devsurface.config.json`.                            |
+| `devsurface passport`              | Generate a shareable HTML onboarding report (Project Passport).       |
+| `devsurface run [script]`          | Run a package script (interactive picker when omitted).               |
+| `devsurface up`                    | Run the launch sequence: Docker services, then the dev script.        |
+| `devsurface upgrade`               | Check the npm registry for a newer DevSurface release.                |
+| `devsurface serve`                 | Start the multi-workspace hub server.                                 |
+| `devsurface workspace add [path]`  | Register a project directory with the local hub.                      |
+| `devsurface workspace list`        | List registered hub workspaces.                                       |
+| `devsurface workspace remove <id>` | Remove a workspace from the hub registry.                             |
+| `devsurface workspace prune`       | Remove workspaces whose directories no longer exist.                  |
 
 ## Project Passport
 
@@ -272,16 +285,22 @@ run package scripts, inspect local ports, require a real `.env`, or contact Dock
 
 ## What It Detects
 
-| Area            | Detection                                                          |
-| --------------- | ------------------------------------------------------------------ |
-| Project         | `package.json`, project name, README, LICENSE                      |
-| Package manager | npm, pnpm, yarn, bun from lock files                               |
-| Scripts         | `package.json` scripts                                             |
-| Environment     | `.env`, `.env.example`, missing and empty keys without values      |
-| Ports           | Configured, inferred, and occupied ports using Node's `net` module |
-| Docker          | Compose files, daemon status, service state, controls, and logs    |
-| Git             | Repository presence and current branch                             |
-| Framework       | Next.js, Vite, Express, Fastify, NestJS, Remix, Prisma             |
+| Area            | Detection                                                                  |
+| --------------- | -------------------------------------------------------------------------- |
+| Project         | `package.json`, project name, README, LICENSE                              |
+| Package manager | npm, pnpm, yarn, bun from lock files                                       |
+| Scripts         | `package.json` scripts                                                     |
+| Environment     | `.env`, `.env.example`, missing and empty keys without values              |
+| Ports           | Configured, inferred, and occupied ports using Node's `net` module         |
+| Docker          | Compose files, daemon status, service state, controls, and logs            |
+| Git             | Branch, changed files, ahead/behind upstream, last commit, remote          |
+| Monorepo        | npm/yarn/bun/pnpm workspaces, Turborepo, Nx, Lerna, and member packages    |
+| Dependencies    | Runtime/dev counts and stale-lockfile detection                            |
+| Toolchain       | Test runner, linter, formatter, bundler, ORM, styling, CI, git hooks, TS   |
+| Node version    | Required Node from `engines.node`, `.nvmrc`, or `.node-version`            |
+| README          | Quick-start commands from fenced shell blocks, surfaced in onboarding      |
+| Project facts   | License type, commit count, latest tag, CHANGELOG, community docs, tests   |
+| Framework       | 29 frameworks, from Next.js and Astro to Electron, Tauri, and Tailwind CSS |
 
 ## Dashboard
 
@@ -290,20 +309,29 @@ dashboard to open the command palette: fuzzy-search views, package scripts with
 plain-English explanations, quick actions, and workspaces, and run the selection
 without touching the mouse.
 
+The dashboard follows your system light/dark preference; use the topbar toggle or
+the Theme setting to override it. Settings, pinned scripts, and the sidebar
+state persist across reloads, and the dashboard rescans instantly when
+package.json, .env, or Compose files change on disk.
+
 The dashboard includes:
 
-- **Project Overview**: project name, framework, package manager, branch, env, README,
-  and license status.
+- **Project Overview**: project name, framework, package manager, git status
+  (branch, changed files, ahead/behind, last commit), monorepo and dependency
+  summaries, env, README, and license status.
 - **Quick Actions**: compact direct actions for scripts, terminal, project folder,
-  `package.json`, and dependency install.
-- **Scripts**: every package script, plus grouped configured commands when present.
+  code editor, `package.json`, and dependency install.
+- **Scripts**: every package script with a search box, grouped configured
+  commands, and a Recent Runs list (recorded locally, never in the repo).
 - **Environment**: `.env` and `.env.example` status, key presence, copy-from-example,
   and write-only quick-fill for missing keys (values are never displayed).
-- **Ports**: detected ports with availability, conflict warnings, and the name +
-  PID of the process occupying a busy port.
+- **Ports**: detected ports with availability, conflict warnings, the name +
+  PID of the process occupying a busy port, and a confirmed one-click "Free"
+  action that stops it.
 - **Services**: Docker Compose daemon state, per-service status, start/stop controls,
   and the latest 200 log lines for each service.
-- **Logs**: expandable per-command logs with timestamps, streams, and exit state.
+- **Logs**: expandable per-command logs with timestamps, streams, exit state,
+  text/stream filters, and a download button.
 - **Repo Health**: doctor warnings for common setup issues.
 
 Quick Actions intentionally stay compact. Long script lists belong in the Scripts
@@ -347,6 +375,19 @@ Configured commands appear on the Scripts page. If `groups` is present, DevSurfa
 uses those group names. Commands not listed in a group still appear under
 Configured Commands. The `docs` URL appears as a Project docs link.
 
+A `launch` array defines the one-command startup order — `"docker"` starts the
+Compose services, any other entry names a package script or configured command:
+
+```json
+{
+  "launch": ["docker", "db:migrate", "dev"]
+}
+```
+
+Run it with `devsurface up` (or `--dry-run` to preview), or the dashboard's
+Launch quick action. `devsurface init` prefills the whole config, including the
+launch sequence, from what the scanner detects.
+
 ## Badge
 
 Maintainers can add this badge to a project README after checking that DevSurface
@@ -354,6 +395,13 @@ works for the repo:
 
 ```markdown
 [![DevSurface ready](https://raw.githubusercontent.com/mrfandu1/devsurface/main/docs/devsurface-badge.svg)](https://github.com/mrfandu1/devsurface)
+```
+
+DevSurface can also generate a live setup-readiness badge from the onboarding
+score (`devsurface-readiness.svg`, shields.io style):
+
+```bash
+npx devsurface badge
 ```
 
 ## Safety
@@ -368,6 +416,8 @@ DevSurface is designed for local development.
 - `.env` values are never returned by scanners, API routes, CLI output, or UI panels.
 - Dashboard command runs show the exact command string first.
 - Docker service start and stop actions show the exact Compose command before running.
+- Freeing a busy port always shows which process will be stopped and asks for
+  confirmation first; system processes and DevSurface itself are never killed.
 - Destructive-looking configured commands, such as `rm -rf`, `docker volume rm`,
   database drops, and `git clean -fd`, are visibly marked before execution. This list is a
   helpful warning, not a sandbox: it flags common footguns for confirmation but does not

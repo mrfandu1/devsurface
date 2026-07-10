@@ -70,6 +70,29 @@ export class WorkspaceRegistry {
     return entry;
   }
 
+  /** Remove every workspace whose directory no longer exists. */
+  async prune(): Promise<WorkspaceEntry[]> {
+    const entries = await this.read();
+    const removed: WorkspaceEntry[] = [];
+    const kept: WorkspaceEntry[] = [];
+    for (const entry of entries) {
+      try {
+        const stat = await fs.stat(entry.path);
+        if (stat.isDirectory()) {
+          kept.push(entry);
+        } else {
+          removed.push(entry);
+        }
+      } catch {
+        removed.push(entry);
+      }
+    }
+    if (removed.length > 0) {
+      await this.write(kept);
+    }
+    return removed;
+  }
+
   async remove(id: string): Promise<boolean> {
     const entries = await this.read();
     const filtered = entries.filter((entry) => entry.id !== id);

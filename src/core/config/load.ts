@@ -140,10 +140,48 @@ function toPorts(value: unknown, warnings: string[]): number[] | undefined {
   return ports.slice(0, MAX_CONFIGURED_PORTS);
 }
 
+const KNOWN_CONFIG_KEYS = new Set([
+  '$schema',
+  'name',
+  'description',
+  'commands',
+  'groups',
+  'ports',
+  'env',
+  'services',
+  'setupGuide',
+  'setup_guide',
+  'docs',
+  'launch'
+]);
+
+export const MAX_LAUNCH_STEPS = 10;
+
+function toLaunch(value: unknown, warnings: string[]): string[] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(value) || !value.every((entry) => typeof entry === 'string')) {
+    warnings.push('launch must be an array of script/command names (or "docker").');
+    return undefined;
+  }
+  const steps = value.map((entry) => entry.trim()).filter((entry) => entry.length > 0);
+  if (steps.length > MAX_LAUNCH_STEPS) {
+    warnings.push(`launch may contain at most ${MAX_LAUNCH_STEPS} steps.`);
+  }
+  return steps.slice(0, MAX_LAUNCH_STEPS);
+}
+
 export function validateConfig(raw: unknown): { config: DevSurfaceConfig; warnings: string[] } {
   const warnings: string[] = [];
   if (!isRecord(raw)) {
     return { config: {}, warnings: ['devsurface.config.json must contain a JSON object.'] };
+  }
+
+  for (const key of Object.keys(raw)) {
+    if (!KNOWN_CONFIG_KEYS.has(key)) {
+      warnings.push(`Unknown config key "${key}" is ignored.`);
+    }
   }
 
   const env = isRecord(raw.env)
@@ -186,7 +224,8 @@ export function validateConfig(raw: unknown): { config: DevSurfaceConfig; warnin
       env,
       services,
       setupGuide: toSetupGuide(raw.setupGuide ?? raw.setup_guide, warnings),
-      docs
+      docs,
+      launch: toLaunch(raw.launch, warnings)
     },
     warnings
   };

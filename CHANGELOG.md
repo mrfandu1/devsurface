@@ -1,5 +1,193 @@
 # Changelog
 
+## 1.0.0
+
+DevSurface 1.0: the dashboard becomes live, launchable, and persistent.
+
+- **A real-time WebSocket layer**: the server watches scan-relevant files
+  (package.json, .env, compose files, tsconfig, …) per workspace, then
+  rescans server-side and pushes the full result — scan, health, and
+  onboarding — so dashboards update instantly with zero extra HTTP requests.
+  Finished runs stream into Recent Runs live (`run-recorded`), registry
+  changes broadcast to every client (`workspaces-changed`), and Docker
+  start/stop actions push the refreshed service state. The client
+  auto-reconnects with exponential backoff (immediately when the tab regains
+  focus), the server heartbeats and drops dead connections, and toasts
+  announce file changes, connection loss, and recovery.
+- **Launch sequences**: a `launch` array in devsurface.config.json (validated,
+  with a doctor check for unknown entries) or a detected default (Compose
+  services → dev/start script). Run it with the new **`devsurface up`** command
+  (`--dry-run` to preview), the dashboard's Launch quick action, the command
+  palette, and it appears in the passport quick start. `devsurface init` now
+  generates a real config from detection — commands, ports, env, services, and
+  the launch sequence prefilled (`--force` to regenerate).
+- **Process control**: Restart button on running scripts, a Stop All button and
+  palette action backed by a new `stop-all` endpoint, and SIGTERM cleanup so
+  containers stop child processes cleanly.
+- **Logs, properly**: ANSI colors render (SGR parser, no HTML pass-through),
+  error/warning lines are tinted, auto-scroll with a "jump to latest" button,
+  wrap and timestamp toggles, a per-script filter dropdown, per-process copy
+  buttons and durations, and a client-side "clear view".
+- **Toast notifications** for live events and actions, **persistent dashboard
+  settings and sidebar state** across reloads, **recently-used-first command
+  palette**, nav badges for remaining onboarding steps and busy ports,
+  clickable homepage link and new Provides-CLI / Module-System overview cells,
+  a workspace search filter on the hub screen, env-file extras
+  (.env.local/.env.development/…) listed, and env key descriptions harvested
+  from example-file comments (shown in the dashboard and passport).
+- **More detection**: e2e runner (Playwright/Cypress/…) separate from the unit
+  runner, git default branch, package bin commands, ESM/CommonJS module type,
+  homepage/repository URL, monorepo member script counts, and eight more
+  frameworks (Qwik, Preact, Lit, Ember, Eleventy, VitePress, Strapi, Payload)
+  with default ports. Script explanations learned knip/depcheck, madge,
+  size-limit, semantic-release, commitlint, and db/smoke/postinstall names.
+- **Twelve more doctor checks**: npm placeholder test script, .nvmrc vs
+  engines.node conflicts, obsolete Compose `version:` key, scripts calling
+  tools missing from devDependencies, orphaned prettier/eslint configs,
+  launch entries that match nothing, duplicate config ports, empty
+  .env.example, npm-invalid package names, READMEs without a title, license
+  field vs LICENSE file mismatches, and test files with no test script.
+  Unknown devsurface.config.json keys now warn too.
+- **CLI**: `devsurface up`, `devsurface upgrade` (explicit registry check),
+  `verify --json/--bail`, `explain` "did you mean" suggestions,
+  `passport -o -` (stdout), `badge --label`, `history --script/--clear`,
+  `workspace list --json`, `info --json`.
+- **API**: `GET /api/workspaces/:id/report.md` (Markdown report over HTTP,
+  also in the palette), `GET /api/workspaces/:id/badge.svg` (live readiness
+  badge), `POST /api/workspaces/:id/stop-all`.
+- **Reports**: the Markdown report gained toolchain, project-facts, and README
+  quick-start sections; the passport gained env descriptions, the launch
+  command, and recommended VS Code extensions.
+
+## 0.13.0
+
+- Deeper project intelligence: license type detection from LICENSE text (MIT,
+  Apache-2.0, GPL, BSD, ISC, MPL, …), TypeScript version, git-hook manager
+  (Husky/lefthook/pre-commit), total commit count and latest reachable tag,
+  pinned package-manager version, CHANGELOG presence + newest entry,
+  CONTRIBUTING/CODE_OF_CONDUCT detection, recommended VS Code extensions, and
+  a bounded test-file count. Compose files now contribute their published
+  host ports to port probing, and the root Dockerfile's base image is read.
+- Eight more doctor checks: missing description/license fields, CHANGELOG
+  behind package.json, node_modules missing from .gitignore, unpinned
+  Dockerfile base image, scripts pointing at files that do not exist,
+  packages duplicated across dependencies and devDependencies, wildcard
+  ("\*"/"latest") versions, and very short READMEs.
+- CLI: `devsurface run` with no argument opens an interactive script picker;
+  `verify --only/--skip`; `passport --open`; `badge --score`;
+  `history --clear`; `scan --summary` (one-line status for prompts);
+  `devsurface status` (pings the local hub: version, uptime, workspaces);
+  `ports --json`.
+- API: `GET /api/workspaces/:id/ports/common` scans the ports dev tools
+  usually claim (3000, 5173, 8080, 5432, …) and identifies the owners;
+  `/api/hub/status` now reports uptime and workspace count.
+- Dashboard: the browser tab shows the project name and a status-dot favicon
+  (green running / red failed); "refreshed Xs ago" ticker; last-run info per
+  script; a Logs jump button on running scripts; pause/resume for the log
+  stream with clickable stdout/stderr/system count chips; "copy unset keys as
+  template" in Environment; a "copy all setup commands" button and a
+  ready-to-run hero on Onboarding; a "What else is running?" common-ports
+  scanner in Ports; Docker service start/stop entries and "copy project
+  path" in the command palette; commit/tag, license-type, and test-file
+  Overview cells; collapsible configured-command groups; compose port badges
+  per service; and "(missing)" markers in the workspace switcher.
+- Passport: hero badges for commit count, latest tag, and license; a "Good to
+  know" section with a plain-English explanation of the license and pointers
+  to CONTRIBUTING, the code of conduct, and the CHANGELOG.
+
+## 0.12.0
+
+- Added toolchain detection: the test runner, linter, formatter, bundler, ORM,
+  styling system, and CI provider are identified and shown on the Overview, in
+  `devsurface scan`, and in a new "everyday tools" passport section.
+- Added a unified Node requirement (engines.node, `.nvmrc`, or
+  `.node-version`) shown on the Overview and in `devsurface scan`.
+- Added README quick-start extraction: setup commands found in fenced shell
+  blocks appear as onboarding steps ("From the README quick start") when the
+  project has no maintainer-authored setup guide.
+- Added security/hygiene doctor checks: real-looking secrets committed in
+  `.env.example` (error, key names only), Compose `${VARS}` that no local env
+  defines (warning), TypeScript strict mode off (info), and a Node runtime
+  past end-of-life (warning).
+- Added `devsurface env check` (missing/empty key report with CI exit codes
+  and `--json`) and `devsurface env sync` (appends keys that exist in the
+  example but not in `.env` — never overwrites existing values).
+- Added `devsurface doctor --json` and `--fail-on <severity>` for CI gates,
+  `devsurface info` (version + data locations), and `--json` for `history`
+  and `explain`.
+- Dashboard: pin favorite scripts to the top (stored per project in the
+  browser), live elapsed timers on running scripts, copy buttons for script
+  commands and port URLs, an Open button for busy ports, optional browser
+  notifications when a script fails, a "?" keyboard-shortcuts overlay, an
+  add-workspace form on the hub screen, severity filter chips and a
+  copy-as-Markdown button on Repo Health, a warning-count badge on the Repo
+  Health nav item, and a reset-settings button.
+
+## 0.11.0
+
+- Added run history: every script, install, and configured command started from
+  the dashboard is recorded locally (`~/.devsurface/history`, never inside the
+  repository) with status, exit code, and duration. The Scripts page shows a
+  Recent Runs list, `/api/workspaces/:id/history` serves it, and
+  `devsurface history` prints it in the terminal.
+- Added port freeing: busy ports in the Ports view get a confirmed "Free"
+  button that stops the occupying process, and `devsurface ports --free <port>`
+  does the same from the terminal. Guardrails refuse to touch system processes
+  or DevSurface itself, and the exact process name + PID is always shown before
+  anything is stopped.
+- Added `devsurface verify`: runs the project's quality scripts
+  (format:check, lint, typecheck, check, test, build — whichever exist) in
+  sequence with streamed output and a pass/fail summary; exits nonzero on
+  failure so it works in CI and pre-push hooks.
+- Added workspace pruning: `devsurface workspace prune` removes registered
+  workspaces whose directories no longer exist, hub summaries flag missing
+  workspaces, and the hub overview shows a one-click "Remove missing" cleanup.
+- Added an open-in-editor action (Quick Actions and the command palette):
+  detects the VS Code/Cursor/VSCodium CLI or honors `DEVSURFACE_EDITOR`.
+- Added undocumented env key detection: keys present in `.env` but missing from
+  `.env.example` are listed in the Environment view and raised as a doctor info
+  notice, since other machines will not know those settings exist.
+
+## 0.10.0
+
+- Added deep git insights: the scanner now reports working-tree changes,
+  ahead/behind counts against the upstream, the last commit (subject, author,
+  age), and the origin remote URL with any embedded credentials stripped. The
+  Overview shows Working Tree and Last Commit cells, `devsurface scan` prints
+  `main (3 changed, 1 ahead)`, and everything degrades gracefully when the git
+  CLI is unavailable.
+- Added monorepo detection: npm/yarn/bun `workspaces`, `pnpm-workspace.yaml`,
+  Turborepo, Nx, and Lerna are recognized, and member packages are resolved
+  from workspace globs. Shown on the Overview, in `devsurface scan`, and as a
+  passport hero badge.
+- Added dependency insights: runtime/dev dependency counts and a stale-lockfile
+  check (package.json modified after the lockfile) with a matching doctor
+  warning.
+- Added a dashboard dark theme: a topbar toggle, a Theme setting
+  (System/Light/Dark), command-palette entries, `prefers-color-scheme` support,
+  and persistence in localStorage. Every stylesheet color now flows through CSS
+  variables.
+- Added `devsurface explain [script]`: plain-English explanations of every
+  package script and configured command in the terminal.
+- Added `devsurface badge`: generates a shields-style `devsurface | NN% ready`
+  SVG badge from the setup-readiness score for embedding in READMEs.
+- Added `devsurface scan --markdown`: a full Markdown project report (overview,
+  readiness checklist, scripts with explanations, env keys, ports, Docker,
+  health) for docs, wikis, and pull requests.
+- Added new doctor checks: stale lockfile, running Node below `engines.node`,
+  local `.env` without a committed `.env.example`, missing LICENSE in git
+  repos, and branch behind its upstream.
+- Expanded framework detection from 7 to 29 frameworks (Astro, Nuxt, SvelteKit,
+  Angular, Vue, Svelte, Solid, Gatsby, Docusaurus, RedwoodJS, Expo,
+  React Native, Electron, Tauri, AdonisJS, Koa, hapi, Hono, tRPC, Drizzle,
+  Storybook, Tailwind CSS, and more) with default dev-server ports for each.
+- Expanded script explanations: coverage, benchmarks, codegen, bundle analysis,
+  monorepo runners (turbo/nx/lerna), concurrently/npm-run-all,
+  deploy CLIs (wrangler/vercel/netlify/firebase), changesets, husky,
+  Electron/Tauri, drizzle-kit, and watch-mode runners.
+- Added a script search box to the Scripts page and text/stream filters plus a
+  download button to the Logs page.
+
 ## 0.9.0
 
 - Added Rust project support: `Cargo.toml` is detected as a project language and

@@ -37,4 +37,20 @@ describe('explainScript', () => {
     expect(explainScript('dev')).toContain('development server');
     expect(explainScript('mystery', '')).toBe('Runs the project’s “mystery” command.');
   });
+
+  it('explains newer conventional names', () => {
+    expect(explainScript('coverage', 'vitest run --coverage')).toContain('cover');
+    expect(explainScript('generate', 'graphql-codegen')).toContain('Generates');
+    expect(explainScript('bench', 'vitest bench')).toContain('fast');
+    expect(explainScript('prepare', 'husky')).toContain('automatically');
+  });
+
+  it('recognizes monorepo, desktop, and deploy tooling', () => {
+    expect(explainScript('everything', 'turbo run build')).toContain('monorepo');
+    expect(explainScript('all', 'npm-run-all lint test')).toContain('together');
+    expect(explainScript('ship', 'wrangler deploy')).toContain('double-check');
+    expect(explainScript('desktop', 'electron .')).toContain('Electron');
+    expect(explainScript('app', 'tauri dev')).toContain('Tauri');
+    expect(explainScript('schema', 'drizzle-kit push')).toContain('Drizzle');
+  });
 });

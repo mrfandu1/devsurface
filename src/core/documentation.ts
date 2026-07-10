@@ -20,6 +20,90 @@ export function extractScriptReferences(content: string): string[] {
   return Array.from(references);
 }
 
+/** Command words that mark a fenced-code line as a real setup/run command. */
+const README_COMMAND_STARTERS = new Set([
+  'npm',
+  'pnpm',
+  'yarn',
+  'bun',
+  'npx',
+  'bunx',
+  'node',
+  'deno',
+  'docker',
+  'docker-compose',
+  'cp',
+  'copy',
+  'make',
+  'just',
+  'task',
+  'cargo',
+  'go',
+  'python',
+  'python3',
+  'pip',
+  'poetry',
+  'uv',
+  'composer',
+  'bundle',
+  'rails',
+  'mvn',
+  'gradle'
+]);
+
+const README_COMMAND_LIMIT = 10;
+
+/**
+ * Extract the setup/run commands a README documents in fenced code blocks
+ * (```bash / sh / shell / console / zsh, or untagged). Lines are normalized
+ * (leading `$`/`>` prompts stripped) and only recognizably command-shaped
+ * lines are kept, so prose and output samples never leak through.
+ */
+const SHELL_FENCE_LANGUAGES = new Set(['', 'bash', 'sh', 'shell', 'console', 'zsh']);
+
+export function extractReadmeCommands(content: string): string[] {
+  const commands: string[] = [];
+  const seen = new Set<string>();
+  let inFence = false;
+  let shellFence = false;
+
+  for (const rawLine of content.split(/\r?\n/)) {
+    const fenceMatch = rawLine.trim().match(/^```(\S*)/);
+    if (fenceMatch !== null) {
+      if (inFence) {
+        inFence = false;
+        shellFence = false;
+      } else {
+        inFence = true;
+        shellFence = SHELL_FENCE_LANGUAGES.has(fenceMatch[1].toLowerCase());
+      }
+      continue;
+    }
+    if (!inFence || !shellFence) {
+      continue;
+    }
+
+    const line = rawLine
+      .trim()
+      .replace(/^[$>]\s+/, '')
+      .trim();
+    if (line.length === 0 || line.startsWith('#') || line.length > 120) {
+      continue;
+    }
+    const firstWord = line.split(/\s+/)[0];
+    if (!README_COMMAND_STARTERS.has(firstWord) || seen.has(line)) {
+      continue;
+    }
+    seen.add(line);
+    commands.push(line);
+    if (commands.length >= README_COMMAND_LIMIT) {
+      return commands;
+    }
+  }
+
+  return commands;
+}
+
 export function documentsEnvironmentSetup(content: string): boolean {
   return /(?:\.env(?:\.example)?|environment\s+variables?)/i.test(content);
 }

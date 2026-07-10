@@ -78,7 +78,47 @@ const NAME_INTENTS: NameIntent[] = [
     keys: ['storybook'],
     explanation: 'Starts Storybook to preview UI components on their own.'
   },
-  { keys: ['docs'], explanation: 'Builds or serves the project documentation.' }
+  { keys: ['docs'], explanation: 'Builds or serves the project documentation.' },
+  {
+    keys: ['coverage'],
+    explanation: 'Runs the tests and reports how much of the code they cover.'
+  },
+  {
+    keys: ['bench', 'benchmark'],
+    explanation: 'Measures how fast parts of the code run.'
+  },
+  {
+    keys: ['generate', 'gen', 'codegen'],
+    explanation: 'Generates code or files the project needs from schemas or templates.'
+  },
+  {
+    keys: ['analyze', 'analyse'],
+    explanation: 'Analyzes the build output, usually to inspect bundle size.'
+  },
+  {
+    keys: ['fix'],
+    explanation: 'Automatically fixes the code problems that tools can fix on their own.'
+  },
+  {
+    keys: ['reset'],
+    explanation: 'Resets local state (often the database) back to a clean starting point.'
+  },
+  {
+    keys: ['prepare'],
+    explanation: 'Sets up project tooling — this usually runs automatically after install.'
+  },
+  {
+    keys: ['db', 'database'],
+    explanation: 'Works with the project database (migrations, seeds, or a console).'
+  },
+  {
+    keys: ['smoke'],
+    explanation: 'Runs a quick smoke test to confirm the basics still work.'
+  },
+  {
+    keys: ['postinstall'],
+    explanation: 'Runs automatically right after dependencies are installed.'
+  }
 ];
 
 /**
@@ -95,8 +135,80 @@ const TOOL_INTENTS: ToolIntent[] = [
     explanation: 'Builds the app into optimized files ready for production.'
   },
   {
-    test: /next\s+dev|vite|remix\s+dev|astro\s+dev/,
+    test: /next\s+dev|vite|remix\s+dev|astro\s+dev|nuxt\s+dev|ng\s+serve|gatsby\s+develop|expo\s+start/,
     explanation: 'Starts the development server so you can preview the app in your browser.'
+  },
+  {
+    test: /turbo\s+run|\bturbo\b|\bnx\s|lerna\s+run/,
+    explanation: 'Runs a task across every package in this monorepo.'
+  },
+  {
+    test: /concurrently|npm-run-all|\brun-p\b|\brun-s\b/,
+    explanation: 'Runs several of the project’s scripts together in one go.'
+  },
+  {
+    test: /wrangler\s+(deploy|publish)|vercel(\s+deploy)?$|netlify\s+deploy|firebase\s+deploy|gh-pages/,
+    explanation: 'Deploys the project — double-check before running this one.'
+  },
+  {
+    test: /changeset/,
+    explanation: 'Manages version bumps and release notes for the next release.'
+  },
+  {
+    test: /husky|lint-staged/,
+    explanation: 'Sets up or runs git hooks that check code before each commit.'
+  },
+  {
+    test: /rimraf|del-cli|\brm\s+-rf\b/,
+    explanation: 'Deletes generated files and leftover build output.'
+  },
+  {
+    test: /electron-builder|electron-packager|electron-forge/,
+    explanation: 'Packages the desktop app into an installer for distribution.'
+  },
+  {
+    test: /\belectron\b/,
+    explanation: 'Starts the desktop (Electron) version of the app.'
+  },
+  {
+    test: /tauri\s+dev/,
+    explanation: 'Starts the desktop (Tauri) version of the app for development.'
+  },
+  {
+    test: /tauri\s+build/,
+    explanation: 'Builds the desktop (Tauri) app into an installable program.'
+  },
+  {
+    test: /drizzle-kit/,
+    explanation: 'Manages the database schema and migrations with Drizzle.'
+  },
+  {
+    test: /\bstorybook\b/,
+    explanation: 'Starts Storybook to preview UI components on their own.'
+  },
+  {
+    test: /node\s+--watch|tsx\s+watch/,
+    explanation: 'Runs the app and restarts it automatically whenever you change a file.'
+  },
+  {
+    test: /\bknip\b|\bdepcheck\b/,
+    explanation: 'Finds unused files, exports, and dependencies that can be deleted.'
+  },
+  {
+    test: /\bmadge\b|dependency-cruiser|\bdepcruise\b/,
+    explanation: 'Analyzes the dependency graph, usually to find circular imports.'
+  },
+  {
+    test: /size-limit|bundlesize/,
+    explanation: 'Checks that the built bundle stays under its size budget.'
+  },
+  {
+    test: /semantic-release/,
+    explanation: 'Publishes a release automatically based on commit messages.'
+  },
+  {
+    test: /commitlint/,
+    explanation: 'Checks that commit messages follow the project’s convention.'
   },
   {
     test: /playwright|cypress/,

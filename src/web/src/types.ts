@@ -36,7 +36,10 @@ export interface ScanResult {
     localKeys: string[];
     missingKeys: string[];
     emptyKeys: string[];
+    extraKeys?: string[];
     keys: EnvKeyStatus[];
+    additionalFiles?: string[];
+    descriptions?: Record<string, string>;
   } | null;
   docker: {
     composeFiles: string[];
@@ -49,9 +52,23 @@ export interface ScanResult {
     dockerRunning: boolean | null;
     daemonStatus: 'running' | 'stopped' | 'not-installed' | 'unknown';
     message: string | null;
+    baseImage?: string | null;
+    servicePorts?: Array<{ service: string; hostPorts: number[] }>;
   } | null;
   git: {
     branch: string | null;
+    dirtyFiles?: number | null;
+    ahead?: number | null;
+    behind?: number | null;
+    commitCount?: number | null;
+    latestTag?: string | null;
+    lastCommit?: {
+      hash: string;
+      author: string;
+      date: string;
+      subject: string;
+    } | null;
+    remoteUrl?: string | null;
   } | null;
   framework: {
     type: string;
@@ -78,6 +95,39 @@ export interface ScanResult {
   license: {
     exists: boolean;
   };
+  monorepo?: {
+    tools: string[];
+    packageGlobs: string[];
+    packages: Array<{ name: string; dir: string; scriptCount?: number }>;
+    packageCount: number;
+  } | null;
+  toolchain?: {
+    testRunner: string | null;
+    linter: string | null;
+    formatter: string | null;
+    bundler: string | null;
+    orm: string | null;
+    styling: string | null;
+    ci: string | null;
+    typescript?: string | null;
+    gitHooks?: string | null;
+  };
+  nodeRequirement?: string | null;
+  readmeCommands?: string[];
+  licenseType?: string | null;
+  changelog?: { exists: boolean; latestVersion: string | null };
+  community?: { contributing: boolean; codeOfConduct: boolean };
+  vscodeExtensions?: string[];
+  testFileCount?: number;
+  bins?: string[];
+  moduleType?: 'module' | 'commonjs' | null;
+  homepage?: string | null;
+  dependencies?: {
+    runtimeCount: number;
+    devCount: number;
+    lockfile: string | null;
+    lockfileStale: boolean;
+  } | null;
   config: {
     config: {
       description?: string;
@@ -156,4 +206,15 @@ export interface WorkspaceSummary {
   path: string;
   addedAt: string;
   runningProcesses: number;
+  missing?: boolean;
+}
+
+export interface RunHistoryEntry {
+  script: string;
+  command: string;
+  status: 'exited' | 'failed' | 'stopped';
+  exitCode: number | null;
+  startedAt: string;
+  endedAt: string;
+  durationMs: number;
 }

@@ -131,10 +131,44 @@ function toPorts(value, warnings) {
   }
   return ports.slice(0, MAX_CONFIGURED_PORTS);
 }
+var KNOWN_CONFIG_KEYS = /* @__PURE__ */ new Set([
+  "$schema",
+  "name",
+  "description",
+  "commands",
+  "groups",
+  "ports",
+  "env",
+  "services",
+  "setupGuide",
+  "setup_guide",
+  "docs",
+  "launch"
+]);
+var MAX_LAUNCH_STEPS = 10;
+function toLaunch(value, warnings) {
+  if (value === void 0) {
+    return void 0;
+  }
+  if (!Array.isArray(value) || !value.every((entry) => typeof entry === "string")) {
+    warnings.push('launch must be an array of script/command names (or "docker").');
+    return void 0;
+  }
+  const steps = value.map((entry) => entry.trim()).filter((entry) => entry.length > 0);
+  if (steps.length > MAX_LAUNCH_STEPS) {
+    warnings.push(`launch may contain at most ${MAX_LAUNCH_STEPS} steps.`);
+  }
+  return steps.slice(0, MAX_LAUNCH_STEPS);
+}
 function validateConfig(raw) {
   const warnings = [];
   if (!isRecord(raw)) {
     return { config: {}, warnings: ["devsurface.config.json must contain a JSON object."] };
+  }
+  for (const key of Object.keys(raw)) {
+    if (!KNOWN_CONFIG_KEYS.has(key)) {
+      warnings.push(`Unknown config key "${key}" is ignored.`);
+    }
   }
   const env = isRecord(raw.env) ? {
     example: typeof raw.env.example === "string" ? raw.env.example : void 0,
@@ -167,7 +201,8 @@ function validateConfig(raw) {
       env,
       services,
       setupGuide: toSetupGuide(raw.setupGuide ?? raw.setup_guide, warnings),
-      docs
+      docs,
+      launch: toLaunch(raw.launch, warnings)
     },
     warnings
   };

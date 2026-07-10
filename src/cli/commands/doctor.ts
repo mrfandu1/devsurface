@@ -14,16 +14,30 @@ function colorSeverity(severity: 'error' | 'warning' | 'info'): string {
   return pc.cyan('info');
 }
 
-export async function doctorCommand(cwd = process.cwd()): Promise<void> {
+const SEVERITY_RANK = { info: 0, warning: 1, error: 2 } as const;
+
+export async function doctorCommand(
+  cwd = process.cwd(),
+  options: { json?: boolean; failOn?: 'error' | 'warning' | 'info' | 'never' } = {}
+): Promise<void> {
   const warnings = await runDoctor(cwd);
 
-  if (warnings.length === 0) {
+  if (options.json === true) {
+    console.log(JSON.stringify(warnings, null, 2));
+  } else if (warnings.length === 0) {
     console.log(pc.green('No health warnings found.'));
-    return;
+  } else {
+    for (const item of warnings) {
+      console.log(`${colorSeverity(item.severity)} ${pc.bold(safeTerminalText(item.title))}`);
+      console.log(`  ${safeTerminalText(item.message)}`);
+    }
   }
 
-  for (const item of warnings) {
-    console.log(`${colorSeverity(item.severity)} ${pc.bold(safeTerminalText(item.title))}`);
-    console.log(`  ${safeTerminalText(item.message)}`);
+  const failOn = options.failOn ?? 'never';
+  if (failOn !== 'never') {
+    const threshold = SEVERITY_RANK[failOn];
+    if (warnings.some((item) => SEVERITY_RANK[item.severity] >= threshold)) {
+      process.exitCode = 1;
+    }
   }
 }

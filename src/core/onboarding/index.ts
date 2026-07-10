@@ -186,6 +186,21 @@ export function buildOnboardingPlan(scan: ScanResult, warnings: DoctorWarning[])
     }
   }
 
+  // 6b. README quick-start commands, when no maintainer guide exists. This is
+  // the project's own documented recipe, surfaced without leaving the dashboard.
+  const hasGuide = (scan.config?.config.setupGuide ?? []).length > 0;
+  if (!hasGuide) {
+    for (const [index, command] of scan.readmeCommands.slice(0, 5).entries()) {
+      steps.push({
+        id: `readme-${index}`,
+        title: command,
+        description: 'From the README quick start.',
+        status: 'manual',
+        blocking: false
+      });
+    }
+  }
+
   // 7. Project docs link.
   const docs = scan.config?.config.docs;
   if (typeof docs === 'string' && docs.length > 0 && isSafeHttpUrl(docs)) {

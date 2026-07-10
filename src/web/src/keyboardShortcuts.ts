@@ -14,6 +14,7 @@ export type DashboardShortcutAction =
   | { type: 'refresh' }
   | { type: 'toggleSidebar' }
   | { type: 'palette' }
+  | { type: 'shortcutsHelp' }
   | { type: 'view'; view: DashboardShortcutView };
 
 interface DashboardShortcutTarget {
@@ -71,6 +72,11 @@ export function getDashboardShortcut(
   const hasAnyModifier = event.altKey || event.ctrlKey || event.metaKey || event.shiftKey;
   if (event.key === 'F5' && !hasAnyModifier) {
     return { type: 'refresh' };
+  }
+
+  // "?" opens the shortcuts overlay; it usually arrives with Shift held.
+  if (event.key === '?' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+    return { type: 'shortcutsHelp' };
   }
 
   if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey) {

@@ -37,18 +37,25 @@ export function defaultPortsForFramework(framework: FrameworkInfo | null): numbe
     return [];
   }
 
-  const ports: number[] = [];
-  if (framework.detected.includes('Next.js') || framework.detected.includes('Express')) {
-    ports.push(3000);
-  }
+  const defaults: Array<{ labels: string[]; port: number }> = [
+    { labels: ['Next.js', 'Express', 'Nuxt', 'Remix', 'Docusaurus', 'NestJS'], port: 3000 },
+    { labels: ['Vite', 'SvelteKit'], port: 5173 },
+    { labels: ['Astro'], port: 4321 },
+    { labels: ['Angular'], port: 4200 },
+    { labels: ['Gatsby'], port: 8000 },
+    { labels: ['Storybook'], port: 6006 },
+    { labels: ['AdonisJS'], port: 3333 },
+    { labels: ['Expo'], port: 8081 },
+    { labels: ['Tauri'], port: 1420 },
+    { labels: ['Prisma'], port: 5555 },
+    { labels: ['Eleventy'], port: 8080 },
+    { labels: ['Strapi'], port: 1337 },
+    { labels: ['Ember'], port: 4200 }
+  ];
 
-  if (framework.detected.includes('Vite')) {
-    ports.push(5173);
-  }
-
-  if (framework.detected.includes('Prisma')) {
-    ports.push(5555);
-  }
+  const ports = defaults
+    .filter((entry) => entry.labels.some((label) => framework.detected.includes(label)))
+    .map((entry) => entry.port);
 
   return uniquePorts(ports);
 }

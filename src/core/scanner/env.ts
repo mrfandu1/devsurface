@@ -75,6 +75,57 @@ export function parseEnvKeys(content: string): ParsedEnv {
   return { keys: Array.from(new Set(keys)), emptyKeys: Array.from(new Set(emptyKeys)) };
 }
 
+/**
+ * Harvest human descriptions for env keys from the contiguous comment lines
+ * directly above each key in the example file.
+ */
+export function parseEnvDescriptions(content: string): Record<string, string> {
+  const descriptions: Record<string, string> = {};
+  let pendingComment: string[] = [];
+
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (line.startsWith('#')) {
+      pendingComment.push(line.replace(/^#+\s?/, '').trim());
+      continue;
+    }
+    if (line.length === 0) {
+      pendingComment = [];
+      continue;
+    }
+    const normalized = line.startsWith('export ') ? line.slice('export '.length).trim() : line;
+    const separator = normalized.indexOf('=');
+    if (separator > 0) {
+      const key = normalized.slice(0, separator).trim();
+      if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) && pendingComment.length > 0) {
+        const description = pendingComment.join(' ').trim().slice(0, 200);
+        if (description.length > 0) {
+          descriptions[key] = description;
+        }
+      }
+    }
+    pendingComment = [];
+  }
+
+  return descriptions;
+}
+
+const ADDITIONAL_ENV_FILES = ['.env.local', '.env.development', '.env.production', '.env.test'];
+
+async function detectAdditionalEnvFiles(root: string): Promise<string[]> {
+  const found: string[] = [];
+  for (const name of ADDITIONAL_ENV_FILES) {
+    try {
+      if ((await fs.stat(path.join(root, name))).isFile()) {
+        found.push(name);
+      }
+    } catch {
+      // Not present.
+    }
+  }
+  return found;
+}
+
 export async function detectEnv(
   root: string,
   config?: DevSurfaceConfig | null
@@ -99,8 +150,11 @@ export async function detectEnv(
   const local = localContent === null ? { keys: [], emptyKeys: [] } : parseEnvKeys(localContent);
   const localKeySet = new Set(local.keys);
   const localEmptySet = new Set(local.emptyKeys);
+  const exampleKeySet = new Set(example.keys);
   const missingKeys = example.keys.filter((key) => !localKeySet.has(key));
   const emptyKeys = local.keys.filter((key) => localEmptySet.has(key));
+  const extraKeys =
+    exampleContent === null ? [] : local.keys.filter((key) => !exampleKeySet.has(key));
 
   return {
     examplePath: exampleContent === null ? null : examplePath,
@@ -111,10 +165,13 @@ export async function detectEnv(
     localKeys: local.keys,
     missingKeys,
     emptyKeys,
+    extraKeys,
     keys: example.keys.map((key) => ({
       key,
       present: localKeySet.has(key),
       empty: localEmptySet.has(key)
-    }))
+    })),
+    additionalFiles: await detectAdditionalEnvFiles(root),
+    descriptions: exampleContent === null ? {} : parseEnvDescriptions(exampleContent)
   };
 }

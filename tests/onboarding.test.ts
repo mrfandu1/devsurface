@@ -20,6 +20,19 @@ function baseScan(overrides: Partial<ScanResult> = {}): ScanResult {
     ports: [],
     readme: { path: null, exists: false },
     license: { path: null, exists: false },
+    monorepo: null,
+    dependencies: null,
+    toolchain: {
+      testRunner: null,
+      linter: null,
+      formatter: null,
+      bundler: null,
+      orm: null,
+      styling: null,
+      ci: null
+    },
+    nodeRequirement: null,
+    readmeCommands: [],
     config: null,
     ...overrides
   };
@@ -57,6 +70,7 @@ describe('buildOnboardingPlan', () => {
         localKeys: [],
         missingKeys: ['API_KEY'],
         emptyKeys: [],
+        extraKeys: [],
         keys: []
       }
     });
@@ -81,6 +95,7 @@ describe('buildOnboardingPlan', () => {
         localKeys: ['API_KEY', 'DB_URL'],
         missingKeys: [],
         emptyKeys: ['DB_URL'],
+        extraKeys: [],
         keys: []
       }
     });

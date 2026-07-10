@@ -4,6 +4,7 @@ import type {
   ManagedProcessSnapshot,
   OnboardingPlan,
   ProcessLogEvent,
+  RunHistoryEntry,
   ScanResult
 } from '../types';
 import { readWorkspaceCache, writeWorkspaceCache } from '../workspaceCache';
@@ -32,6 +33,7 @@ export function useProject(workspaceId: string | null) {
   const [processes, setProcesses] = useState<ManagedProcessSnapshot[]>(cached.processes);
   const [logs, setLogs] = useState<ProcessLogEvent[]>(cached.logs);
   const [onboarding, setOnboarding] = useState<OnboardingPlan | null>(null);
+  const [history, setHistory] = useState<RunHistoryEntry[]>([]);
   const [loading, setLoading] = useState(() => !cached.project);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,16 +44,19 @@ export function useProject(workspaceId: string | null) {
     }
     try {
       const prefix = `/api/workspaces/${encodeURIComponent(workspaceId)}`;
-      const [nextProject, nextHealth, nextProcesses, nextLogs, nextOnboarding] = await Promise.all([
-        fetchJson<ScanResult>(`${prefix}/project`),
-        fetchJson<DoctorWarning[]>(`${prefix}/health`),
-        fetchJson<ManagedProcessSnapshot[]>(`${prefix}/processes`),
-        fetchJson<ProcessLogEvent[]>(`${prefix}/logs`),
-        fetchOptional<OnboardingPlan>(`${prefix}/onboarding`)
-      ]);
+      const [nextProject, nextHealth, nextProcesses, nextLogs, nextOnboarding, nextHistory] =
+        await Promise.all([
+          fetchJson<ScanResult>(`${prefix}/project`),
+          fetchJson<DoctorWarning[]>(`${prefix}/health`),
+          fetchJson<ManagedProcessSnapshot[]>(`${prefix}/processes`),
+          fetchJson<ProcessLogEvent[]>(`${prefix}/logs`),
+          fetchOptional<OnboardingPlan>(`${prefix}/onboarding`),
+          fetchOptional<RunHistoryEntry[]>(`${prefix}/history`)
+        ]);
       setProject(nextProject);
       setHealth(nextHealth);
       setOnboarding(nextOnboarding);
+      setHistory(Array.isArray(nextHistory) ? nextHistory : []);
       setProcesses(nextProcesses);
       setLogs(nextLogs.slice(-500));
       if (workspaceId) {
@@ -81,14 +86,39 @@ export function useProject(workspaceId: string | null) {
     void refresh();
   }, [workspaceId, refresh]);
 
+  /** Apply a server-pushed rescan (WebSocket) without an HTTP round-trip. */
+  const applyServerPush = useCallback(
+    (push: { project: ScanResult; health: DoctorWarning[]; onboarding: OnboardingPlan | null }) => {
+      setProject(push.project);
+      setHealth(push.health);
+      if (push.onboarding !== null) {
+        setOnboarding(push.onboarding);
+      }
+      setError(null);
+      setLoading(false);
+      if (workspaceId) {
+        writeWorkspaceCache(workspaceId, { project: push.project, health: push.health });
+      }
+    },
+    [workspaceId]
+  );
+
+  /** Prepend a run pushed live over the WebSocket to the history list. */
+  const prependHistory = useCallback((entry: RunHistoryEntry) => {
+    setHistory((current) => [entry, ...current].slice(0, 100));
+  }, []);
+
   return {
     project,
     health,
     processes,
     logs,
     onboarding,
+    history,
     loading,
     error,
-    refresh
+    refresh,
+    applyServerPush,
+    prependHistory
   };
 }

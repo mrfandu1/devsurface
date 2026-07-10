@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { safeDisplayText } from '@core/security/text.js';
+import { resolveLaunchPlan, describeLaunchStep } from '@core/launch/index.js';
 import { isDangerousCommand } from '@core/security/dangerousCommand.js';
 import { isSafeHttpUrl } from '@core/security/url.js';
 import { explainScript } from '@core/explain/index.js';
@@ -16,12 +17,24 @@ import { useWorkspace } from './hooks/useWorkspace';
 import { CommandPalette, type PaletteItem } from './components/CommandPalette';
 import { getDashboardShortcut, type DashboardShortcutView } from './keyboardShortcuts';
 import { mutationHeaders, apiPrefix } from './mutation';
+import { orderWithPins, readPinnedScripts, togglePinnedScript } from './pins';
+import { applyStatusFavicon, faviconStateFromProcesses } from './favicon';
+import { logLineTone, parseAnsiSpans } from './ansi';
+import {
+  applyTheme,
+  readStoredThemePreference,
+  storeThemePreference,
+  toggledTheme,
+  type ResolvedTheme,
+  type ThemePreference
+} from './theme';
 import type {
   DoctorWarning,
   ManagedProcessSnapshot,
   OnboardingPlan,
   OnboardingStep,
   ProcessLogEvent,
+  RunHistoryEntry,
   ScanResult,
   WorkspaceSummary
 } from './types';
@@ -104,7 +117,7 @@ function statusForScript(
   return processes.find((processInfo) => processInfo.script === script) ?? null;
 }
 
-function displayProcessStatus(processInfo: ManagedProcessSnapshot | null): string {
+function displayProcessStatus(processInfo: ManagedProcessSnapshot | null, now?: number): string {
   if (processInfo === null) {
     return 'idle';
   }
@@ -115,6 +128,16 @@ function displayProcessStatus(processInfo: ManagedProcessSnapshot | null): strin
 
   if (processInfo.status === 'failed') {
     return `failed (${processInfo.exitCode ?? '?'})`;
+  }
+
+  if (processInfo.status === 'running' && now !== undefined) {
+    const started = new Date(processInfo.startedAt).getTime();
+    if (Number.isFinite(started) && now > started) {
+      const seconds = Math.floor((now - started) / 1000);
+      const elapsed =
+        seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+      return `running · ${elapsed}`;
+    }
   }
 
   return processInfo.status;
@@ -185,14 +208,57 @@ interface DashboardSettings {
   autoRefreshSeconds: number;
   autoOpenAppUrl: boolean;
   confirmBeforeRun: boolean;
+  notifyOnFailure: boolean;
 }
 
 const DEFAULT_DASHBOARD_SETTINGS: DashboardSettings = {
   autoRefreshEnabled: true,
   autoRefreshSeconds: 30,
   autoOpenAppUrl: true,
-  confirmBeforeRun: true
+  confirmBeforeRun: true,
+  notifyOnFailure: false
 };
+
+const SETTINGS_STORAGE_KEY = 'devsurface-settings';
+const SIDEBAR_STORAGE_KEY = 'devsurface-sidebar-collapsed';
+const PALETTE_RECENTS_KEY = 'devsurface-palette-recents';
+
+/** Settings persist across reloads; unknown/corrupt values fall back to defaults. */
+function loadStoredSettings(): DashboardSettings {
+  try {
+    const raw = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
+    if (raw === null) {
+      return { ...DEFAULT_DASHBOARD_SETTINGS };
+    }
+    const parsed = JSON.parse(raw) as Partial<DashboardSettings>;
+    return { ...DEFAULT_DASHBOARD_SETTINGS, ...parsed };
+  } catch {
+    return { ...DEFAULT_DASHBOARD_SETTINGS };
+  }
+}
+
+function readPaletteRecents(): string[] {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(PALETTE_RECENTS_KEY) ?? '[]');
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function recordPaletteRecent(id: string): void {
+  try {
+    const next = [id, ...readPaletteRecents().filter((item) => item !== id)].slice(0, 5);
+    window.localStorage.setItem(PALETTE_RECENTS_KEY, JSON.stringify(next));
+  } catch {
+    // Storage unavailable — recents just don't persist.
+  }
+}
+
+interface Toast {
+  id: number;
+  message: string;
+}
 
 type ActiveView = DashboardShortcutView;
 
@@ -397,6 +463,28 @@ function Icon({ name }: { name: string }) {
         </>
       ) : null}
       {name === 'chevron' ? <path d="m8 14 4-4 4 4" /> : null}
+      {name === 'sun' ? (
+        <>
+          <circle cx="12" cy="12" r="4" fill="none" />
+          <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1" />
+        </>
+      ) : null}
+      {name === 'moon' ? <path d="M20 14A8 8 0 1 1 10 4a7 7 0 0 0 10 10Z" /> : null}
+      {name === 'branch' ? (
+        <>
+          <circle cx="6" cy="6" r="2.4" fill="none" />
+          <circle cx="6" cy="18" r="2.4" fill="none" />
+          <circle cx="18" cy="8" r="2.4" fill="none" />
+          <path d="M6 8.4v7.2" />
+          <path d="M18 10.4c0 4-4 4.6-9 5" />
+        </>
+      ) : null}
+      {name === 'search' ? (
+        <>
+          <circle cx="11" cy="11" r="6" fill="none" />
+          <path d="m16 16 4.5 4.5" />
+        </>
+      ) : null}
       {name === 'external' ? (
         <>
           <path d="M14 5h5v5" />
@@ -412,12 +500,18 @@ function Sidebar({
   version,
   activeView,
   collapsed,
+  warningCount,
+  onboardingTodo,
+  busyPortCount,
   onSelectView,
   onToggleCollapsed
 }: {
   version: string;
   activeView: ActiveView;
   collapsed: boolean;
+  warningCount: number;
+  onboardingTodo: number;
+  busyPortCount: number;
   onSelectView: (view: ActiveView) => void;
   onToggleCollapsed: () => void;
 }) {
@@ -450,6 +544,24 @@ function Sidebar({
           >
             <Icon name={item.icon} />
             <span>{item.label}</span>
+            {item.view === 'health' && warningCount > 0 ? (
+              <em className="nav-badge" aria-label={`${warningCount} health warnings`}>
+                {warningCount > 9 ? '9+' : warningCount}
+              </em>
+            ) : null}
+            {item.view === 'onboarding' && onboardingTodo > 0 ? (
+              <em
+                className="nav-badge warn-badge"
+                aria-label={`${onboardingTodo} setup steps remaining`}
+              >
+                {onboardingTodo > 9 ? '9+' : onboardingTodo}
+              </em>
+            ) : null}
+            {item.view === 'ports' && busyPortCount > 0 ? (
+              <em className="nav-badge" aria-label={`${busyPortCount} busy ports`}>
+                {busyPortCount > 9 ? '9+' : busyPortCount}
+              </em>
+            ) : null}
           </button>
         ))}
       </nav>
@@ -482,7 +594,32 @@ function Sidebar({
   );
 }
 
-function Topbar({ project, onRefresh }: { project: ScanResult; onRefresh: () => Promise<void> }) {
+function describeRefreshAge(lastRefreshed: Date, now: number): string {
+  const seconds = Math.max(0, Math.floor((now - lastRefreshed.getTime()) / 1000));
+  if (seconds < 5) {
+    return 'just now';
+  }
+  if (seconds < 60) {
+    return `${seconds}s ago`;
+  }
+  return `${Math.floor(seconds / 60)}m ago`;
+}
+
+function Topbar({
+  project,
+  theme,
+  lastRefreshed,
+  now,
+  onToggleTheme,
+  onRefresh
+}: {
+  project: ScanResult;
+  theme: ResolvedTheme;
+  lastRefreshed: Date;
+  now: number;
+  onToggleTheme: () => void;
+  onRefresh: () => Promise<void>;
+}) {
   return (
     <header className="topbar">
       <div className="workspace-crumb">
@@ -491,11 +628,25 @@ function Topbar({ project, onRefresh }: { project: ScanResult; onRefresh: () => 
         <span>&middot;</span>
         <code>{formatPath(project.root)}</code>
       </div>
-      <button className="refresh-button" onClick={() => void onRefresh()} type="button">
-        <Icon name="refresh" />
-        Refresh
-        <kbd>F5</kbd>
-      </button>
+      <div className="topbar-actions">
+        <span className="refresh-age" title={formatTime(lastRefreshed)}>
+          {describeRefreshAge(lastRefreshed, now)}
+        </span>
+        <button
+          className="refresh-button theme-toggle"
+          onClick={onToggleTheme}
+          type="button"
+          title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+          aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+        >
+          <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
+        </button>
+        <button className="refresh-button" onClick={() => void onRefresh()} type="button">
+          <Icon name="refresh" />
+          Refresh
+          <kbd>F5</kbd>
+        </button>
+      </div>
     </header>
   );
 }
@@ -513,13 +664,60 @@ function describeBusyPort(port: ScanResult['ports'][number]): string {
   return `in use${describePortOwner(port.owner)}${suggestion}`;
 }
 
+function describeGitSync(git: NonNullable<ScanResult['git']>): {
+  value: string;
+  tone?: string;
+} {
+  const parts: string[] = [];
+  if (typeof git.dirtyFiles === 'number' && git.dirtyFiles > 0) {
+    parts.push(`${git.dirtyFiles} changed`);
+  }
+  if (typeof git.ahead === 'number' && git.ahead > 0) {
+    parts.push(`${git.ahead} ahead`);
+  }
+  if (typeof git.behind === 'number' && git.behind > 0) {
+    parts.push(`${git.behind} behind`);
+  }
+  if (parts.length === 0) {
+    const known = typeof git.dirtyFiles === 'number';
+    return { value: known ? 'clean' : 'unknown', tone: known ? 'ok' : 'muted' };
+  }
+  return { value: parts.join(', '), tone: git.behind ? 'bad' : undefined };
+}
+
+function relativeAge(isoDate: string): string {
+  const then = new Date(isoDate).getTime();
+  if (!Number.isFinite(then)) {
+    return '';
+  }
+  const minutes = Math.round((Date.now() - then) / 60_000);
+  if (minutes < 60) {
+    return `${Math.max(minutes, 0)}m ago`;
+  }
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) {
+    return `${hours}h ago`;
+  }
+  const days = Math.round(hours / 24);
+  return days < 60 ? `${days}d ago` : `${Math.round(days / 30)}mo ago`;
+}
+
 function OverviewMatrix({ project, lastRefreshed }: { project: ScanResult; lastRefreshed: Date }) {
   const packageData = project.packageJson?.data;
   const viteVersion =
     packageData?.devDependencies?.vite?.replace(/^[^\d]*/, 'v') ??
     (project.framework?.detected.includes('Vite') ? 'detected' : 'unknown');
-  const nodeVersion = packageData?.engines?.node ?? 'local';
+  const nodeVersion = project.nodeRequirement ?? packageData?.engines?.node ?? 'local';
+  const toolchain = project.toolchain ?? null;
+  const lintFormat = [toolchain?.linter, toolchain?.formatter].filter(
+    (tool): tool is string => tool != null
+  );
   const env = project.env;
+  const git = project.git;
+  const gitSync = git ? describeGitSync(git) : null;
+  const lastCommit = git?.lastCommit ?? null;
+  const monorepo = project.monorepo ?? null;
+  const deps = project.dependencies ?? null;
 
   const items = [
     {
@@ -552,10 +750,105 @@ function OverviewMatrix({ project, lastRefreshed }: { project: ScanResult; lastR
       tone: 'ok'
     },
     {
-      icon: 'ports',
+      icon: 'branch',
       label: 'Branch',
       value: project.git?.branch ?? 'not detected'
     },
+    ...(git !== null && gitSync !== null
+      ? [
+          {
+            icon: 'branch',
+            label: 'Working Tree',
+            value: gitSync.value,
+            tone: gitSync.tone
+          }
+        ]
+      : []),
+    ...(lastCommit !== null
+      ? [
+          {
+            icon: 'doc',
+            label: 'Last Commit',
+            value: `${lastCommit.subject.slice(0, 60)}${lastCommit.subject.length > 60 ? '…' : ''} · ${relativeAge(lastCommit.date)}`
+          }
+        ]
+      : []),
+    ...(monorepo !== null
+      ? [
+          {
+            icon: 'box',
+            label: 'Monorepo',
+            value: `${monorepo.tools.join(', ')}${monorepo.packageCount > 0 ? ` · ${monorepo.packageCount} packages` : ''}${(() => {
+              const total = monorepo.packages.reduce(
+                (sum, member) => sum + (member.scriptCount ?? 0),
+                0
+              );
+              return total > 0 ? ` · ${total} scripts` : '';
+            })()}`,
+            tone: 'ok'
+          }
+        ]
+      : []),
+    ...((project.bins?.length ?? 0) > 0
+      ? [
+          {
+            icon: 'terminal',
+            label: 'Provides CLI',
+            value: (project.bins ?? []).slice(0, 3).join(', '),
+            tone: 'ok'
+          }
+        ]
+      : []),
+    ...(project.moduleType != null && project.packageJson !== null
+      ? [
+          {
+            icon: 'script',
+            label: 'Module System',
+            value: project.moduleType === 'module' ? 'ESM' : 'CommonJS'
+          }
+        ]
+      : []),
+    ...(deps !== null
+      ? [
+          {
+            icon: 'download',
+            label: 'Dependencies',
+            value: `${deps.runtimeCount} runtime + ${deps.devCount} dev${deps.lockfileStale ? ' · lockfile stale' : ''}`,
+            tone: deps.lockfileStale ? 'bad' : undefined
+          }
+        ]
+      : []),
+    ...(toolchain?.testRunner != null
+      ? [{ icon: 'check', label: 'Test Runner', value: toolchain.testRunner, tone: 'ok' }]
+      : []),
+    ...(lintFormat.length > 0
+      ? [{ icon: 'check', label: 'Lint / Format', value: lintFormat.join(' + '), tone: 'ok' }]
+      : []),
+    ...(toolchain?.ci != null
+      ? [{ icon: 'refresh', label: 'CI', value: toolchain.ci, tone: 'ok' }]
+      : []),
+    ...(typeof git?.commitCount === 'number'
+      ? [
+          {
+            icon: 'branch',
+            label: 'Commits',
+            value: `${git.commitCount}${git.latestTag != null ? ` · latest tag ${git.latestTag}` : ''}`
+          }
+        ]
+      : []),
+    ...(project.licenseType != null
+      ? [{ icon: 'doc', label: 'License Type', value: project.licenseType, tone: 'ok' }]
+      : []),
+    ...(typeof project.testFileCount === 'number' && project.testFileCount > 0
+      ? [
+          {
+            icon: 'check',
+            label: 'Test Files',
+            value: String(project.testFileCount),
+            tone: 'ok'
+          }
+        ]
+      : []),
     {
       icon: 'box',
       label: 'Framework',
@@ -605,6 +898,14 @@ function OverviewMatrix({ project, lastRefreshed }: { project: ScanResult; lastR
   return (
     <section className="overview-section" id="overview">
       <h1>Project Overview</h1>
+      {project.homepage != null && isSafeHttpUrl(project.homepage) ? (
+        <p className="overview-homepage">
+          <a href={project.homepage} rel="noreferrer" target="_blank">
+            {project.homepage}
+            <Icon name="external" />
+          </a>
+        </p>
+      ) : null}
       <div className="overview-matrix">
         {items.map((item) => (
           <div className="overview-cell" key={`${item.label}-${item.value}`}>
@@ -632,23 +933,29 @@ function QuickActionStrip({
   onRunScript,
   onOpenTerminal,
   onOpenFolder,
+  onOpenEditor,
   onViewPackage,
-  onInstall
+  onInstall,
+  onLaunch
 }: {
   packageManager: ScanResult['packageManager'];
   passportHref: string;
   onRunScript: () => void;
   onOpenTerminal: () => void;
   onOpenFolder: () => void;
+  onOpenEditor: () => void;
   onViewPackage: () => void;
   onInstall: () => void;
+  onLaunch: () => void;
 }) {
   const manager = packageManager ?? 'npm';
   const installCommand = manager === 'npm' ? 'npm ci' : `${manager} install`;
   const actions = [
-    { icon: 'play', label: 'Scripts', title: 'Open scripts', onClick: onRunScript },
+    { icon: 'play', label: 'Launch', title: 'Run the launch sequence', onClick: onLaunch },
+    { icon: 'script', label: 'Scripts', title: 'Open scripts', onClick: onRunScript },
     { icon: 'terminal', label: 'Terminal', title: 'Open in terminal', onClick: onOpenTerminal },
     { icon: 'folder', label: 'Folder', title: 'Open project folder', onClick: onOpenFolder },
+    { icon: 'doc', label: 'Editor', title: 'Open in your code editor', onClick: onOpenEditor },
     { icon: 'script', label: 'package.json', title: 'Open package.json', onClick: onViewPackage },
     { icon: 'download', label: 'Install', title: `Run ${installCommand}`, onClick: onInstall }
   ];
@@ -688,18 +995,26 @@ function ScriptsTable({
   project,
   processes,
   selectedScript,
+  pinned,
+  now,
   onRun,
   onStop,
-  onSelect
+  onRestart,
+  onSelect,
+  onTogglePin
 }: {
   project: ScanResult;
   processes: ManagedProcessSnapshot[];
   selectedScript: string | null;
+  pinned: string[];
+  now: number;
   onRun: (script: string) => Promise<void>;
   onStop: (pid: string) => Promise<void>;
+  onRestart: (script: string, pid: string) => Promise<void>;
   onSelect: (script: string) => void;
+  onTogglePin: (script: string) => void;
 }) {
-  const scripts = scriptOrder(project);
+  const scripts = orderWithPins(scriptOrder(project), pinned);
 
   return (
     <section className="scripts-section" id="scripts">
@@ -714,8 +1029,9 @@ function ScriptsTable({
         {scripts.map((script) => {
           const processInfo = statusForScript(script, processes);
           const status = processInfo?.status ?? 'idle';
-          const statusLabel = displayProcessStatus(processInfo);
+          const statusLabel = displayProcessStatus(processInfo, now);
           const running = processInfo?.status === 'running';
+          const isPinned = pinned.includes(script);
           return (
             <div
               className={`script-item ${selectedScript === script ? 'selected' : ''}`}
@@ -723,7 +1039,21 @@ function ScriptsTable({
               role="row"
               onClick={() => onSelect(script)}
             >
-              <strong>{script}</strong>
+              <strong>
+                <button
+                  className={`pin-button ${isPinned ? 'pinned' : ''}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onTogglePin(script);
+                  }}
+                  title={isPinned ? 'Unpin script' : 'Pin script to the top'}
+                  aria-label={isPinned ? `Unpin ${script}` : `Pin ${script}`}
+                  type="button"
+                >
+                  {isPinned ? '★' : '☆'}
+                </button>
+                {script}
+              </strong>
               <div className="script-command">
                 <code>{compactCommand(project.scripts[script])}</code>
                 <span className="script-explain">
@@ -735,15 +1065,40 @@ function ScriptsTable({
                 {statusLabel}
               </span>
               <div className="script-controls">
+                <button
+                  className="minor-button copy-command"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    copyText(project.scripts[script]);
+                  }}
+                  title="Copy the raw command"
+                  type="button"
+                >
+                  Copy
+                </button>
                 {running ? (
-                  <button
-                    className="run-button stop-button"
-                    onClick={() => void onStop(processInfo.pid)}
-                    type="button"
-                  >
-                    <Icon name="stop" />
-                    Stop
-                  </button>
+                  <>
+                    <button
+                      className="minor-button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void onRestart(script, processInfo.pid);
+                      }}
+                      title="Stop and start this script again"
+                      type="button"
+                    >
+                      <Icon name="refresh" />
+                      Restart
+                    </button>
+                    <button
+                      className="run-button stop-button"
+                      onClick={() => void onStop(processInfo.pid)}
+                      type="button"
+                    >
+                      <Icon name="stop" />
+                      Stop
+                    </button>
+                  </>
                 ) : (
                   <>
                     <button className="run-button" onClick={() => void onRun(script)} type="button">
@@ -796,8 +1151,10 @@ function ConfiguredCommandsSection({
           </a>
         ) : null}
         {groups.map((group) => (
-          <section className="configured-command-group" key={group.name}>
-            <h4>{group.name}</h4>
+          <details className="configured-command-group" key={group.name} open>
+            <summary>
+              <h4>{group.name}</h4>
+            </summary>
             <div className="configured-command-table">
               {group.commands.map(({ name, command }) => {
                 const processInfo = statusForScript(name, processes);
@@ -837,7 +1194,7 @@ function ConfiguredCommandsSection({
                 );
               })}
             </div>
-          </section>
+          </details>
         ))}
       </div>
     </DrawerSection>
@@ -1078,11 +1435,18 @@ function DockerServicesWorkspace({
           {docker.services.map((service) => {
             const serviceBusy = busy?.service === service.name;
             const running = service.status === 'running';
+            const hostPorts =
+              docker.servicePorts?.find((entry) => entry.service === service.name)?.hostPorts ?? [];
             return (
               <article className="docker-service-row" key={service.name}>
                 <div className="docker-service-identity">
                   <strong>{service.name}</strong>
-                  <span>{service.statusDetail ?? 'No container status reported'}</span>
+                  <span>
+                    {service.statusDetail ?? 'No container status reported'}
+                    {hostPorts.length > 0
+                      ? ` · port${hostPorts.length === 1 ? '' : 's'} ${hostPorts.join(', ')}`
+                      : ''}
+                  </span>
                 </div>
                 <span className={`badge service-badge service-${service.status}`}>
                   <i />
@@ -1196,7 +1560,7 @@ function LogsInspector({
   logs,
   onOpenLogs
 }: {
-  connection: 'connecting' | 'open' | 'closed';
+  connection: 'connecting' | 'open' | 'closed' | 'reconnecting';
   logs: ProcessLogEvent[];
   onOpenLogs: () => void;
 }) {
@@ -1275,6 +1639,31 @@ function AutoOpenUrlToggle({
   );
 }
 
+function ThemeSettingRow({
+  themePreference,
+  onThemeChange
+}: {
+  themePreference: ThemePreference;
+  onThemeChange: (preference: ThemePreference) => void;
+}) {
+  return (
+    <label className="setting-row">
+      <span>
+        <strong>Theme</strong>
+        <em>Follow the system setting or pick light/dark.</em>
+      </span>
+      <select
+        value={themePreference}
+        onChange={(event) => onThemeChange(event.target.value as ThemePreference)}
+      >
+        <option value="system">System</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </select>
+    </label>
+  );
+}
+
 function DashboardSettingsFields({
   settings,
   onSettingsChange
@@ -1339,49 +1728,301 @@ function DashboardSettingsFields({
           type="checkbox"
         />
       </label>
+      <label className="setting-row">
+        <span>
+          <strong>Notify on failure</strong>
+          <em>Show a browser notification when a script fails.</em>
+        </span>
+        <input
+          checked={settings.notifyOnFailure}
+          onChange={(event) => {
+            const enabled = event.target.checked;
+            if (enabled && typeof Notification !== 'undefined') {
+              void Notification.requestPermission();
+            }
+            onSettingsChange({ ...settings, notifyOnFailure: enabled });
+          }}
+          type="checkbox"
+        />
+      </label>
+      <div className="setting-row">
+        <span>
+          <strong>Reset dashboard settings</strong>
+          <em>Restore every setting above to its default.</em>
+        </span>
+        <button
+          className="minor-button"
+          onClick={() => onSettingsChange({ ...DEFAULT_DASHBOARD_SETTINGS })}
+          type="button"
+        >
+          Reset
+        </button>
+      </div>
     </>
   );
 }
 
-function LogConsole({ logs, limit = 220 }: { logs: ProcessLogEvent[]; limit?: number }) {
-  const visibleLogs = logs.slice(-limit);
+const SHORTCUTS_HELP: Array<[string, string]> = [
+  ['Ctrl/Cmd + K', 'Open the command palette'],
+  ['Ctrl/Cmd + B', 'Collapse or expand the sidebar'],
+  ['1 – 8', 'Jump to Overview, Onboarding, Scripts, Environment, Ports, Services, Health, Logs'],
+  [',', 'Open Settings'],
+  ['F5', 'Refresh project data'],
+  ['Esc', 'Close panels and overlays'],
+  ['?', 'Show this shortcuts overview']
+];
 
+function ShortcutsHelp({ onClose }: { onClose: () => void }) {
   return (
-    <div className="log-console" role="log" aria-label="Process output">
-      {visibleLogs.length === 0 ? (
-        <div className="log-empty">No log entries yet.</div>
-      ) : (
-        visibleLogs.map((log, index) => (
-          <div className={`log-console-line ${log.stream}`} key={`${log.timestamp}-${index}`}>
-            <time>{new Date(log.timestamp).toLocaleTimeString()}</time>
-            <strong>{log.script}</strong>
-            <span>{log.stream}</span>
-            <pre>{safeDisplayText(log.message)}</pre>
-          </div>
-        ))
-      )}
+    <div className="drawer-backdrop" onClick={onClose} role="presentation">
+      <div
+        className="shortcuts-modal"
+        role="dialog"
+        aria-label="Keyboard shortcuts"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header>
+          <h2>Keyboard shortcuts</h2>
+          <button className="drawer-close" onClick={onClose} type="button">
+            Close
+          </button>
+        </header>
+        <div className="shortcuts-list">
+          {SHORTCUTS_HELP.map(([keys, description]) => (
+            <div className="shortcuts-row" key={keys}>
+              <kbd>{keys}</kbd>
+              <span>{description}</span>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
 
+function AnsiText({ message }: { message: string }) {
+  const spans = parseAnsiSpans(message);
+  return (
+    <>
+      {spans.map((span, index) =>
+        span.className === null ? (
+          <span key={index}>{safeDisplayText(span.text)}</span>
+        ) : (
+          <span className={span.className} key={index}>
+            {safeDisplayText(span.text)}
+          </span>
+        )
+      )}
+    </>
+  );
+}
+
+function LogConsole({
+  logs,
+  limit = 220,
+  wrap = true,
+  showTimestamps = true,
+  autoScroll = false
+}: {
+  logs: ProcessLogEvent[];
+  limit?: number;
+  wrap?: boolean;
+  showTimestamps?: boolean;
+  autoScroll?: boolean;
+}) {
+  const visibleLogs = logs.slice(-limit);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [atBottom, setAtBottom] = useState(true);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (autoScroll && atBottom && container !== null) {
+      container.scrollTop = container.scrollHeight;
+    }
+  }, [logs, autoScroll, atBottom]);
+
+  return (
+    <div className="log-console-shell">
+      <div
+        className={`log-console ${wrap ? '' : 'nowrap'}`}
+        ref={containerRef}
+        role="log"
+        aria-label="Process output"
+        onScroll={(event) => {
+          const target = event.currentTarget;
+          setAtBottom(target.scrollHeight - target.scrollTop - target.clientHeight < 40);
+        }}
+      >
+        {visibleLogs.length === 0 ? (
+          <div className="log-empty">No log entries yet.</div>
+        ) : (
+          visibleLogs.map((log, index) => {
+            const tone = logLineTone(log.message);
+            return (
+              <div
+                className={`log-console-line ${log.stream} ${tone !== null ? `tone-${tone}` : ''}`}
+                key={`${log.timestamp}-${index}`}
+              >
+                {showTimestamps ? (
+                  <time>{new Date(log.timestamp).toLocaleTimeString()}</time>
+                ) : null}
+                <strong>{log.script}</strong>
+                <span>{log.stream}</span>
+                <pre>
+                  <AnsiText message={log.message} />
+                </pre>
+              </div>
+            );
+          })
+        )}
+      </div>
+      {autoScroll && !atBottom ? (
+        <button
+          className="minor-button jump-latest"
+          onClick={() => {
+            const container = containerRef.current;
+            if (container !== null) {
+              container.scrollTop = container.scrollHeight;
+              setAtBottom(true);
+            }
+          }}
+          type="button"
+        >
+          Jump to latest ↓
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function formatRunDuration(durationMs: number): string {
+  if (durationMs < 1000) {
+    return `${durationMs}ms`;
+  }
+  const seconds = durationMs / 1000;
+  return seconds < 60 ? `${seconds.toFixed(1)}s` : `${Math.round(seconds / 60)}m`;
+}
+
+function historyStatusMeta(entry: RunHistoryEntry): { label: string; className: string } {
+  if (entry.status === 'exited' && entry.exitCode === 0) {
+    return { label: 'ok', className: 'ok' };
+  }
+  if (entry.status === 'stopped') {
+    return { label: 'stopped', className: 'stopped' };
+  }
+  return {
+    label: entry.exitCode === null ? 'failed' : `failed (${entry.exitCode})`,
+    className: 'failed'
+  };
+}
+
+function RecentRunsSection({ history }: { history: RunHistoryEntry[] }) {
+  if (history.length === 0) {
+    return null;
+  }
+
+  return (
+    <DrawerSection title="Recent Runs">
+      <div className="history-table" aria-label="Recent script runs">
+        {history.slice(0, 12).map((entry, index) => {
+          const meta = historyStatusMeta(entry);
+          return (
+            <div className="history-row" key={`${entry.endedAt}-${entry.script}-${index}`}>
+              <span className={`history-status ${meta.className}`}>
+                <i />
+                {meta.label}
+              </span>
+              <strong>{entry.script}</strong>
+              <code>{entry.command}</code>
+              <span className="history-duration">{formatRunDuration(entry.durationMs)}</span>
+              <span className="history-when">{relativeAge(entry.endedAt)}</span>
+            </div>
+          );
+        })}
+      </div>
+      <p className="drawer-note">
+        Runs started from DevSurface are recorded locally (never inside the repository).
+      </p>
+    </DrawerSection>
+  );
+}
+
+function formatLogLine(log: ProcessLogEvent): string {
+  return `${log.timestamp} [${log.script}] ${log.stream}: ${log.message}`;
+}
+
+function downloadLogs(logs: ProcessLogEvent[]): void {
+  const content = logs.map(formatLogLine).join('\n');
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `devsurface-logs-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+type LogStreamFilter = 'all' | 'stdout' | 'stderr' | 'system';
+
 function LogsWorkspace({
   processes,
   logs,
-  compact = false
+  compact = false,
+  initialFilter = ''
 }: {
   processes: ManagedProcessSnapshot[];
   logs: ProcessLogEvent[];
   compact?: boolean;
+  initialFilter?: string;
 }) {
+  const [logFilter, setLogFilter] = useState(initialFilter);
+  const [streamFilter, setStreamFilter] = useState<LogStreamFilter>('all');
+  const [paused, setPaused] = useState(false);
+  const [frozenLogs, setFrozenLogs] = useState<ProcessLogEvent[]>([]);
+  const [wrapLines, setWrapLines] = useState(true);
+  const [showTimestamps, setShowTimestamps] = useState(true);
+  const [scriptFilter, setScriptFilter] = useState('all');
+  const [clearedBefore, setClearedBefore] = useState<string | null>(null);
+
+  const liveLogs = paused ? frozenLogs : logs;
+
+  const filteredLogs = useMemo(() => {
+    const query = logFilter.trim().toLowerCase();
+    return liveLogs.filter(
+      (log) =>
+        (clearedBefore === null || log.timestamp > clearedBefore) &&
+        (streamFilter === 'all' || log.stream === streamFilter) &&
+        (scriptFilter === 'all' || log.script === scriptFilter) &&
+        (query.length === 0 ||
+          log.message.toLowerCase().includes(query) ||
+          log.script.toLowerCase().includes(query))
+    );
+  }, [liveLogs, logFilter, streamFilter, scriptFilter, clearedBefore]);
+
+  const scriptOptions = useMemo(
+    () => [...new Set(liveLogs.map((log) => log.script))].sort(),
+    [liveLogs]
+  );
+
+  const streamCounts = useMemo(() => {
+    const counts = { stdout: 0, stderr: 0, system: 0 };
+    for (const log of liveLogs) {
+      counts[log.stream] += 1;
+    }
+    return counts;
+  }, [liveLogs]);
+
   const logsByPid = useMemo(() => {
     const grouped = new Map<string, ProcessLogEvent[]>();
-    for (const log of logs) {
+    for (const log of filteredLogs) {
       const processLogs = grouped.get(log.pid) ?? [];
       processLogs.push(log);
       grouped.set(log.pid, processLogs);
     }
     return grouped;
-  }, [logs]);
+  }, [filteredLogs]);
+
+  const filtering = logFilter.trim().length > 0 || streamFilter !== 'all';
 
   return (
     <div className={`logs-workspace ${compact ? 'compact' : ''}`}>
@@ -1394,9 +2035,97 @@ function LogsWorkspace({
             </strong>
           </div>
           <em>
-            {logs.length} captured log line{logs.length === 1 ? '' : 's'}
+            {filtering
+              ? `${filteredLogs.length} of ${logs.length} log lines`
+              : `${logs.length} captured log line${logs.length === 1 ? '' : 's'}`}
           </em>
         </header>
+        {compact ? null : (
+          <div className="log-toolbar">
+            <label className="script-filter log-filter">
+              <Icon name="search" />
+              <input
+                type="search"
+                placeholder="Filter log lines…"
+                value={logFilter}
+                onChange={(event) => setLogFilter(event.target.value)}
+                aria-label="Filter log lines"
+              />
+            </label>
+            <div className="stream-chips" role="group" aria-label="Stream counts">
+              {(['stdout', 'stderr', 'system'] as const).map((stream) => (
+                <button
+                  className={`health-chip ${streamFilter === stream ? 'active' : ''} ${stream === 'stderr' && streamCounts.stderr > 0 ? 'stderr-chip' : ''}`}
+                  key={stream}
+                  onClick={() => setStreamFilter(streamFilter === stream ? 'all' : stream)}
+                  title={`Show only ${stream} lines`}
+                  type="button"
+                >
+                  {stream} ({streamCounts[stream]})
+                </button>
+              ))}
+            </div>
+            <button
+              className={`minor-button ${paused ? 'paused-button' : ''}`}
+              type="button"
+              onClick={() => {
+                if (!paused) {
+                  setFrozenLogs(logs);
+                }
+                setPaused(!paused);
+              }}
+              title={paused ? 'Resume live log updates' : 'Freeze the log view'}
+            >
+              <Icon name={paused ? 'play' : 'stop'} />
+              {paused ? 'Resume' : 'Pause'}
+            </button>
+            <button
+              className="minor-button"
+              type="button"
+              disabled={filteredLogs.length === 0}
+              onClick={() => downloadLogs(filteredLogs)}
+            >
+              <Icon name="download" />
+              Download
+            </button>
+            <select
+              value={scriptFilter}
+              onChange={(event) => setScriptFilter(event.target.value)}
+              aria-label="Filter by script"
+            >
+              <option value="all">All scripts</option>
+              {scriptOptions.map((script) => (
+                <option key={script} value={script}>
+                  {script}
+                </option>
+              ))}
+            </select>
+            <label className="checkbox-control compact">
+              <input
+                checked={wrapLines}
+                onChange={(event) => setWrapLines(event.target.checked)}
+                type="checkbox"
+              />
+              <span>Wrap</span>
+            </label>
+            <label className="checkbox-control compact">
+              <input
+                checked={showTimestamps}
+                onChange={(event) => setShowTimestamps(event.target.checked)}
+                type="checkbox"
+              />
+              <span>Times</span>
+            </label>
+            <button
+              className="minor-button"
+              type="button"
+              title="Hide everything logged so far (new lines still appear)"
+              onClick={() => setClearedBefore(new Date().toISOString())}
+            >
+              Clear view
+            </button>
+          </div>
+        )}
         {processes.length === 0 ? (
           <p className="log-process-empty">
             Run a script or install dependencies to create a log stream.
@@ -1417,18 +2146,44 @@ function LogsWorkspace({
                     <span className={`script-status status-${processInfo.status}`}>
                       <i />
                       {displayProcessStatus(processInfo)}
+                      {processInfo.endedAt !== null
+                        ? ` · ${formatRunDuration(
+                            Math.max(
+                              new Date(processInfo.endedAt).getTime() -
+                                new Date(processInfo.startedAt).getTime(),
+                              0
+                            )
+                          )}`
+                        : ''}
                     </span>
                     <span>
                       {processLogs.length} line{processLogs.length === 1 ? '' : 's'}
                       {stderrCount > 0 ? `, ${stderrCount} stderr` : ''}
                     </span>
                     <code>#{processInfo.pid}</code>
+                    <button
+                      className="minor-button"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        copyText(processLogs.map(formatLogLine).join('\n'));
+                      }}
+                      title="Copy this process's log lines"
+                      type="button"
+                    >
+                      Copy
+                    </button>
                     <span className="process-logs-trigger">
                       Logs
                       <Icon name="chevron" />
                     </span>
                   </summary>
-                  <LogConsole logs={processLogs} limit={compact ? 90 : 260} />
+                  <LogConsole
+                    logs={processLogs}
+                    limit={compact ? 90 : 260}
+                    wrap={wrapLines}
+                    showTimestamps={showTimestamps}
+                    autoScroll={!compact}
+                  />
                 </details>
               );
             })}
@@ -1456,7 +2211,9 @@ function DetailDrawer({
   onStopDockerService,
   onLoadDockerLogs,
   onClose,
-  onSettingsChange
+  onSettingsChange,
+  themePreference,
+  onThemeChange
 }: {
   drawer: DrawerKind;
   project: ScanResult;
@@ -1475,6 +2232,8 @@ function DetailDrawer({
   onLoadDockerLogs: (service: string) => Promise<void>;
   onClose: () => void;
   onSettingsChange: (settings: DashboardSettings) => void;
+  themePreference: ThemePreference;
+  onThemeChange: (preference: ThemePreference) => void;
 }) {
   if (drawer === null) {
     return null;
@@ -1527,6 +2286,7 @@ function DetailDrawer({
         {drawer === 'settings' ? (
           <div className="drawer-content">
             <DrawerSection title="Dashboard">
+              <ThemeSettingRow themePreference={themePreference} onThemeChange={onThemeChange} />
               <DashboardSettingsFields settings={settings} onSettingsChange={onSettingsChange} />
             </DrawerSection>
             <DrawerSection title="Workspace">
@@ -1790,15 +2550,38 @@ function OnboardingBanner({ plan, onOpen }: { plan: OnboardingPlan; onOpen: () =
   );
 }
 
+function setupCommandsForProject(project: ScanResult): string[] {
+  const manager = project.packageManager ?? 'npm';
+  const commands: string[] = [];
+  if (project.language.detected.includes('node') && project.packageJson !== null) {
+    commands.push(manager === 'npm' ? 'npm ci' : `${manager} install`);
+  }
+  if (project.env?.hasExample && !project.env.hasLocal) {
+    commands.push('cp .env.example .env');
+  }
+  if (project.docker !== null && project.docker.composeFiles.length > 0) {
+    commands.push('docker compose up -d');
+  }
+  if (project.scripts.dev !== undefined) {
+    commands.push(`${manager} run dev`);
+  } else if (project.scripts.start !== undefined) {
+    commands.push(`${manager} run start`);
+  }
+  return commands;
+}
+
 function OnboardingView({
   plan,
+  project,
   onRunStep,
   onRefresh
 }: {
   plan: OnboardingPlan | null;
+  project: ScanResult;
   onRunStep: (step: OnboardingStep) => void;
   onRefresh: () => Promise<void>;
 }) {
+  const setupCommands = setupCommandsForProject(project);
   return (
     <section className="section-page">
       <header className="section-page-header">
@@ -1817,7 +2600,31 @@ function OnboardingView({
         </p>
       ) : (
         <div className="section-grid single">
+          {plan.ready ? (
+            <section className="onboarding-ready-hero">
+              <span className="round-status ok">
+                <Icon name="check" />
+              </span>
+              <div>
+                <strong>This project is ready to run</strong>
+                <p>Every blocking setup step is done. Start the app and build something.</p>
+              </div>
+            </section>
+          ) : null}
           <OnboardingProgress plan={plan} />
+          {setupCommands.length > 0 ? (
+            <div className="onboarding-copy-row">
+              <button
+                className="minor-button"
+                onClick={() => copyText(setupCommands.join('\n'))}
+                title="Copy the full setup recipe for a terminal"
+                type="button"
+              >
+                Copy all setup commands
+              </button>
+              <code>{setupCommands.join('  →  ')}</code>
+            </div>
+          ) : null}
           {plan.steps.length === 0 ? (
             <p className="drawer-note">No onboarding steps were detected for this project.</p>
           ) : (
@@ -1939,7 +2746,15 @@ function SectionPage({
   onLoadDockerLogs,
   onRefresh,
   onSettingsChange,
-  onSetEnv
+  onSetEnv,
+  onFreePort,
+  onScanCommonPorts,
+  onJumpToLogs,
+  onStopAll,
+  logsPrefill,
+  history,
+  themePreference,
+  onThemeChange
 }: {
   view: Exclude<ActiveView, 'overview' | 'onboarding'>;
   project: ScanResult;
@@ -1960,7 +2775,56 @@ function SectionPage({
   onRefresh: () => Promise<void>;
   onSettingsChange: (settings: DashboardSettings) => void;
   onSetEnv: (key: string, value: string) => Promise<void>;
+  onFreePort: (port: ScanResult['ports'][number]) => Promise<void>;
+  onScanCommonPorts: () => Promise<ScanResult['ports']>;
+  onJumpToLogs: (script: string) => void;
+  onStopAll: () => Promise<void>;
+  logsPrefill: string;
+  history: RunHistoryEntry[];
+  themePreference: ThemePreference;
+  onThemeChange: (preference: ThemePreference) => void;
 }) {
+  const [commonPorts, setCommonPorts] = useState<ScanResult['ports'] | null>(null);
+  const [scanningCommon, setScanningCommon] = useState(false);
+
+  async function scanCommonPorts(): Promise<void> {
+    setScanningCommon(true);
+    try {
+      setCommonPorts(await onScanCommonPorts());
+    } finally {
+      setScanningCommon(false);
+    }
+  }
+  const [scriptFilter, setScriptFilter] = useState('');
+  const [scriptSort, setScriptSort] = useState<'default' | 'name' | 'recent'>('default');
+  const [healthFilter, setHealthFilter] = useState<'all' | 'error' | 'warning' | 'info'>('all');
+  const filteredWarnings =
+    healthFilter === 'all'
+      ? warnings
+      : warnings.filter((warning) => warning.severity === healthFilter);
+  const scriptQuery = scriptFilter.trim().toLowerCase();
+  const filteredScripts = Object.entries(project.scripts)
+    .filter(
+      ([script, command]) =>
+        scriptQuery.length === 0 ||
+        script.toLowerCase().includes(scriptQuery) ||
+        command.toLowerCase().includes(scriptQuery)
+    )
+    .sort(([left], [right]) => {
+      if (scriptSort === 'name') {
+        return left.localeCompare(right);
+      }
+      if (scriptSort === 'recent') {
+        const leftIndex = history.findIndex((entry) => entry.script === left);
+        const rightIndex = history.findIndex((entry) => entry.script === right);
+        return (
+          (leftIndex === -1 ? Number.MAX_SAFE_INTEGER : leftIndex) -
+          (rightIndex === -1 ? Number.MAX_SAFE_INTEGER : rightIndex)
+        );
+      }
+      return 0;
+    });
+  const runningCount = processes.filter((processInfo) => processInfo.status === 'running').length;
   const titleMap: Record<Exclude<ActiveView, 'overview' | 'onboarding'>, string> = {
     scripts: 'Scripts',
     environment: 'Environment',
@@ -2004,8 +2868,49 @@ function SectionPage({
             onStop={onStopProcess}
           />
           <DrawerSection title="All Package Scripts">
+            <div className="script-list-toolbar">
+              <label className="script-filter">
+                <Icon name="search" />
+                <input
+                  type="search"
+                  placeholder="Filter scripts by name or command…"
+                  value={scriptFilter}
+                  onChange={(event) => setScriptFilter(event.target.value)}
+                  aria-label="Filter scripts"
+                />
+                {scriptFilter.length > 0 ? (
+                  <button type="button" onClick={() => setScriptFilter('')}>
+                    Clear
+                  </button>
+                ) : null}
+              </label>
+              <select
+                value={scriptSort}
+                onChange={(event) =>
+                  setScriptSort(event.target.value as 'default' | 'name' | 'recent')
+                }
+                aria-label="Sort scripts"
+              >
+                <option value="default">Package order</option>
+                <option value="name">By name</option>
+                <option value="recent">Recently run</option>
+              </select>
+              {runningCount > 0 ? (
+                <button
+                  className="minor-button stop-all-button"
+                  onClick={() => void onStopAll()}
+                  type="button"
+                >
+                  <Icon name="stop" />
+                  Stop all ({runningCount})
+                </button>
+              ) : null}
+            </div>
             <div className="drawer-table script-drawer-table">
-              {Object.entries(project.scripts).map(([script, command]) => {
+              {filteredScripts.length === 0 ? (
+                <p className="drawer-note">No scripts match “{scriptFilter}”.</p>
+              ) : null}
+              {filteredScripts.map(([script, command]) => {
                 const processInfo = statusForScript(script, processes);
                 const running = processInfo?.status === 'running';
                 return (
@@ -2016,6 +2921,24 @@ function SectionPage({
                       <i />
                       {displayProcessStatus(processInfo ?? null)}
                     </span>
+                    <button
+                      className="minor-button"
+                      onClick={() => copyText(`${project.packageManager ?? 'npm'} run ${script}`)}
+                      title="Copy the run invocation for a terminal"
+                      type="button"
+                    >
+                      Copy
+                    </button>
+                    {processInfo !== null ? (
+                      <button
+                        className="minor-button"
+                        onClick={() => onJumpToLogs(script)}
+                        title="Open this script's output in the Logs view"
+                        type="button"
+                      >
+                        Logs
+                      </button>
+                    ) : null}
                     {running ? (
                       <button
                         className="minor-button"
@@ -2039,6 +2962,7 @@ function SectionPage({
               })}
             </div>
           </DrawerSection>
+          <RecentRunsSection history={history} />
           <DrawerSection title="Run Notes">
             <p className="drawer-note">
               Long-running scripts stay attached to DevSurface and stream output into Logs.
@@ -2059,6 +2983,12 @@ function SectionPage({
               <strong className={project.env?.hasExample ? 'text-ok' : 'text-bad'}>
                 {project.env?.hasExample ? 'found' : 'missing'}
               </strong>
+              {(project.env?.additionalFiles ?? []).map((file) => (
+                <div className="drawer-row" key={file}>
+                  <span>{file}</span>
+                  <strong className="text-ok">found</strong>
+                </div>
+              ))}
             </div>
           </DrawerSection>
           <DrawerSection title="Variables">
@@ -2074,6 +3004,9 @@ function SectionPage({
                         {item.present ? (item.empty ? 'empty' : 'present') : 'missing'}
                       </strong>
                     </div>
+                    {project.env?.descriptions?.[item.key] !== undefined ? (
+                      <p className="env-key-description">{project.env.descriptions[item.key]}</p>
+                    ) : null}
                     {!item.present || item.empty ? (
                       <EnvKeyEditor envKey={item.key} onSave={onSetEnv} />
                     ) : null}
@@ -2085,7 +3018,40 @@ function SectionPage({
               Values you save are written straight to .env and are never shown back, logged, or sent
               anywhere.
             </p>
+            {project.env !== null &&
+            project.env.missingKeys.length + project.env.emptyKeys.length > 0 ? (
+              <button
+                className="minor-button"
+                onClick={() =>
+                  copyText(
+                    [...new Set([...project.env!.missingKeys, ...project.env!.emptyKeys])]
+                      .map((key) => `${key}=`)
+                      .join('\n')
+                  )
+                }
+                title="Copy every unset key as KEY= lines, ready to paste into .env"
+                type="button"
+              >
+                Copy unset keys as template
+              </button>
+            ) : null}
           </DrawerSection>
+          {project.env !== null && (project.env.extraKeys?.length ?? 0) > 0 ? (
+            <DrawerSection title="Undocumented Keys">
+              <p className="drawer-note">
+                These keys exist in .env but not in .env.example, so other machines will not know
+                about them. Add the key names (without values) to the example.
+              </p>
+              <div className="drawer-table two-col">
+                {(project.env.extraKeys ?? []).map((key) => (
+                  <div className="drawer-row" key={key}>
+                    <code>{key}</code>
+                    <span className="text-bad">not in example</span>
+                  </div>
+                ))}
+              </div>
+            </DrawerSection>
+          ) : null}
         </div>
       ) : null}
 
@@ -2095,7 +3061,7 @@ function SectionPage({
             {project.ports.length === 0 ? (
               <p className="drawer-note">No configured or inferred ports.</p>
             ) : (
-              <div className="drawer-table three-col">
+              <div className="drawer-table port-action-table">
                 {project.ports.map((port) => (
                   <div className="drawer-row" key={port.port}>
                     <strong>{port.port}</strong>
@@ -2103,10 +3069,91 @@ function SectionPage({
                     <span className={port.inUse ? 'text-bad' : 'text-ok'}>
                       {port.inUse ? describeBusyPort(port) : 'available'}
                     </span>
+                    <span className="port-row-actions">
+                      <button
+                        className="minor-button"
+                        onClick={() => copyText(`http://localhost:${port.port}`)}
+                        title="Copy the URL"
+                        type="button"
+                      >
+                        Copy
+                      </button>
+                      {port.inUse ? (
+                        <>
+                          <button
+                            className="minor-button"
+                            onClick={() =>
+                              window.open(
+                                `http://localhost:${port.port}`,
+                                '_blank',
+                                'noopener,noreferrer'
+                              )
+                            }
+                            title="Open the URL in a new tab"
+                            type="button"
+                          >
+                            <Icon name="external" />
+                            Open
+                          </button>
+                          <button
+                            className="minor-button"
+                            onClick={() => void onFreePort(port)}
+                            title="Stop the process using this port"
+                            type="button"
+                          >
+                            <Icon name="stop" />
+                            Free
+                          </button>
+                        </>
+                      ) : null}
+                    </span>
                   </div>
                 ))}
               </div>
             )}
+          </DrawerSection>
+          <DrawerSection title="What Else Is Running?">
+            <p className="drawer-note">
+              Scan the ports dev tools usually claim (3000, 5173, 8080, 5432…) to see what is
+              occupying your machine right now.
+            </p>
+            <button
+              className="minor-button"
+              disabled={scanningCommon}
+              onClick={() => void scanCommonPorts()}
+              type="button"
+            >
+              <Icon name="search" />
+              {scanningCommon ? 'Scanning…' : 'Scan common dev ports'}
+            </button>
+            {commonPorts !== null ? (
+              commonPorts.filter((port) => port.inUse).length === 0 ? (
+                <p className="drawer-note">All common dev ports are free.</p>
+              ) : (
+                <div className="drawer-table port-action-table">
+                  {commonPorts
+                    .filter((port) => port.inUse)
+                    .map((port) => (
+                      <div className="drawer-row" key={`common-${port.port}`}>
+                        <strong>{port.port}</strong>
+                        <code>http://localhost:{port.port}</code>
+                        <span className="text-bad">{describeBusyPort(port)}</span>
+                        <span className="port-row-actions">
+                          <button
+                            className="minor-button"
+                            onClick={() => void onFreePort(port).then(() => scanCommonPorts())}
+                            title="Stop the process using this port"
+                            type="button"
+                          >
+                            <Icon name="stop" />
+                            Free
+                          </button>
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              )
+            ) : null}
           </DrawerSection>
           <p className="drawer-note">Last checked: {formatTime(lastRefreshed)}</p>
         </div>
@@ -2131,11 +3178,52 @@ function SectionPage({
       {view === 'health' ? (
         <div className="section-grid single">
           <DrawerSection title="Doctor Check">
+            {warnings.length > 0 ? (
+              <div className="health-toolbar">
+                <div className="health-filter-chips" role="group" aria-label="Filter by severity">
+                  {(['all', 'error', 'warning', 'info'] as const).map((severity) => {
+                    const count =
+                      severity === 'all'
+                        ? warnings.length
+                        : warnings.filter((warning) => warning.severity === severity).length;
+                    return (
+                      <button
+                        className={`health-chip ${healthFilter === severity ? 'active' : ''}`}
+                        key={severity}
+                        onClick={() => setHealthFilter(severity)}
+                        type="button"
+                      >
+                        {severity} ({count})
+                      </button>
+                    );
+                  })}
+                </div>
+                <button
+                  className="minor-button"
+                  onClick={() =>
+                    copyText(
+                      warnings
+                        .map(
+                          (warning) =>
+                            `- **${warning.title}** (${warning.severity}) — ${warning.message}`
+                        )
+                        .join('\n')
+                    )
+                  }
+                  title="Copy every warning as a Markdown list"
+                  type="button"
+                >
+                  Copy as Markdown
+                </button>
+              </div>
+            ) : null}
             {warnings.length === 0 ? (
               <p className="drawer-note">No health warnings. All good.</p>
+            ) : filteredWarnings.length === 0 ? (
+              <p className="drawer-note">No {healthFilter} warnings.</p>
             ) : (
               <div className="drawer-list">
-                {warnings.map((warning) => (
+                {filteredWarnings.map((warning) => (
                   <article className={`drawer-warning ${warning.severity}`} key={warning.id}>
                     <strong>{warning.title}</strong>
                     <p>{warning.message}</p>
@@ -2148,11 +3236,19 @@ function SectionPage({
         </div>
       ) : null}
 
-      {view === 'logs' ? <LogsWorkspace processes={processes} logs={logs} /> : null}
+      {view === 'logs' ? (
+        <LogsWorkspace
+          key={logsPrefill}
+          processes={processes}
+          logs={logs}
+          initialFilter={logsPrefill}
+        />
+      ) : null}
 
       {view === 'settings' ? (
         <div className="section-grid">
           <DrawerSection title="Dashboard">
+            <ThemeSettingRow themePreference={themePreference} onThemeChange={onThemeChange} />
             <DashboardSettingsFields settings={settings} onSettingsChange={onSettingsChange} />
           </DrawerSection>
           <DrawerSection title="Workspace">
@@ -2187,7 +3283,12 @@ function WorkspaceSwitcher({
       >
         {workspaces.map((ws) => (
           <option key={ws.id} value={ws.id}>
-            {ws.name} {ws.runningProcesses > 0 ? `(${ws.runningProcesses} running)` : ''}
+            {ws.name}
+            {ws.missing === true
+              ? ' (missing)'
+              : ws.runningProcesses > 0
+                ? ` (${ws.runningProcesses} running)`
+                : ''}
           </option>
         ))}
       </select>
@@ -2195,16 +3296,96 @@ function WorkspaceSwitcher({
   );
 }
 
+function AddWorkspaceForm({ onAdd }: { onAdd: (path: string) => Promise<string | null> }) {
+  const [path, setPath] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(): Promise<void> {
+    if (path.trim().length === 0 || busy) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    const failure = await onAdd(path.trim());
+    setBusy(false);
+    if (failure === null) {
+      setPath('');
+    } else {
+      setError(failure);
+    }
+  }
+
+  return (
+    <div className="hub-add-form">
+      <input
+        placeholder="Absolute path to a project folder…"
+        value={path}
+        disabled={busy}
+        onChange={(event) => setPath(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            void submit();
+          }
+        }}
+        aria-label="Project folder path"
+      />
+      <button className="minor-button" disabled={busy} onClick={() => void submit()} type="button">
+        {busy ? 'Adding…' : 'Add workspace'}
+      </button>
+      {error !== null ? <span className="text-bad">{error}</span> : null}
+    </div>
+  );
+}
+
 function HubOverview({
   workspaces,
-  onSwitch
+  onSwitch,
+  onPrune,
+  onAdd
 }: {
   workspaces: WorkspaceSummary[];
   onSwitch: (id: string) => void;
+  onPrune: () => Promise<void>;
+  onAdd: (path: string) => Promise<string | null>;
 }) {
+  const missingCount = workspaces.filter((ws) => ws.missing === true).length;
+  const [hubQuery, setHubQuery] = useState('');
+  const visibleWorkspaces = workspaces.filter((ws) => {
+    const query = hubQuery.trim().toLowerCase();
+    return (
+      query.length === 0 ||
+      ws.name.toLowerCase().includes(query) ||
+      ws.path.toLowerCase().includes(query)
+    );
+  });
+
   return (
     <div className="hub-overview">
       <h2>Workspaces</h2>
+      <AddWorkspaceForm onAdd={onAdd} />
+      {workspaces.length > 3 ? (
+        <label className="script-filter hub-search">
+          <Icon name="search" />
+          <input
+            type="search"
+            placeholder="Filter workspaces…"
+            value={hubQuery}
+            onChange={(event) => setHubQuery(event.target.value)}
+            aria-label="Filter workspaces"
+          />
+        </label>
+      ) : null}
+      {missingCount > 0 ? (
+        <p className="hub-prune-note">
+          {missingCount} workspace{missingCount === 1 ? '' : 's'} point
+          {missingCount === 1 ? 's' : ''} to folders that no longer exist.{' '}
+          <button className="minor-button" onClick={() => void onPrune()} type="button">
+            Remove missing
+          </button>
+        </p>
+      ) : null}
       {workspaces.length === 0 ? (
         <p className="empty">
           No workspaces registered. Run <code>devsurface workspace add</code> or{' '}
@@ -2212,12 +3393,20 @@ function HubOverview({
         </p>
       ) : (
         <div className="hub-workspace-grid">
-          {workspaces.map((ws) => (
-            <button key={ws.id} className="hub-workspace-card" onClick={() => onSwitch(ws.id)}>
+          {visibleWorkspaces.map((ws) => (
+            <button
+              key={ws.id}
+              className={`hub-workspace-card ${ws.missing === true ? 'missing' : ''}`}
+              onClick={() => onSwitch(ws.id)}
+            >
               <strong>{ws.name}</strong>
               <span className="hub-workspace-path">{ws.path}</span>
               <span className="hub-workspace-meta">
-                {ws.runningProcesses > 0 ? `${ws.runningProcesses} running` : 'idle'}
+                {ws.missing === true
+                  ? 'folder missing'
+                  : ws.runningProcesses > 0
+                    ? `${ws.runningProcesses} running`
+                    : 'idle'}
               </span>
             </button>
           ))}
@@ -2235,14 +3424,27 @@ export default function App() {
   const [selectedScript, setSelectedScript] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<ActiveView>('overview');
   const [drawer, setDrawer] = useState<DrawerKind>(null);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [settings, setSettings] = useState<DashboardSettings>(() => ({
-    ...DEFAULT_DASHBOARD_SETTINGS
-  }));
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => window.localStorage.getItem(SIDEBAR_STORAGE_KEY) === '1'
+  );
+  const [settings, setSettings] = useState<DashboardSettings>(loadStoredSettings);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [themePreference, setThemePreference] = useState<ThemePreference>(() =>
+    readStoredThemePreference(typeof window !== 'undefined' ? window.localStorage : null)
+  );
+  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() =>
+    applyTheme(
+      readStoredThemePreference(typeof window !== 'undefined' ? window.localStorage : null)
+    )
+  );
   const [dockerBusy, setDockerBusy] = useState<DockerBusyState | null>(null);
   const [dockerLogs, setDockerLogs] = useState<DockerLogState | null>(null);
   const [dockerError, setDockerError] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [pinned, setPinned] = useState<string[]>([]);
+  const [now, setNow] = useState(() => Date.now());
+  const [logsPrefill, setLogsPrefill] = useState('');
   const processes = useMemo(
     () => mergeProcesses(projectState.processes, socket.processes),
     [projectState.processes, socket.processes]
@@ -2264,6 +3466,7 @@ export default function App() {
 
       if (action.type === 'closeDrawer') {
         setDrawer(null);
+        setShortcutsOpen(false);
         return;
       }
 
@@ -2279,6 +3482,11 @@ export default function App() {
 
       if (action.type === 'palette') {
         setPaletteOpen((current) => !current);
+        return;
+      }
+
+      if (action.type === 'shortcutsHelp') {
+        setShortcutsOpen((current) => !current);
         return;
       }
 
@@ -2304,6 +3512,147 @@ export default function App() {
 
     return () => window.clearInterval(interval);
   }, [projectLoaded, settings.autoRefreshEnabled, settings.autoRefreshSeconds]);
+
+  useEffect(() => {
+    setResolvedTheme(applyTheme(themePreference));
+    storeThemePreference(
+      typeof window !== 'undefined' ? window.localStorage : null,
+      themePreference
+    );
+
+    if (themePreference !== 'system' || typeof window.matchMedia !== 'function') {
+      return undefined;
+    }
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const followSystem = (): void => setResolvedTheme(applyTheme('system'));
+    media.addEventListener('change', followSystem);
+    return () => media.removeEventListener('change', followSystem);
+  }, [themePreference]);
+
+  function addToast(message: string): void {
+    const id = Date.now() + Math.random();
+    setToasts((current) => [...current.slice(-3), { id, message }]);
+    window.setTimeout(() => {
+      setToasts((current) => current.filter((toast) => toast.id !== id));
+    }, 4200);
+  }
+
+  // Persist dashboard settings and sidebar state across reloads.
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+    } catch {
+      // Storage unavailable — settings stay session-only.
+    }
+  }, [settings]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SIDEBAR_STORAGE_KEY, sidebarCollapsed ? '1' : '0');
+    } catch {
+      // Storage unavailable.
+    }
+  }, [sidebarCollapsed]);
+
+  // A watched project file changed on disk. The server pushes the fresh scan
+  // right behind this hint, so only announce it here.
+  const projectChangeAt = socket.projectChange?.at ?? 0;
+  useEffect(() => {
+    if (projectChangeAt === 0) {
+      return;
+    }
+    addToast(`${socket.projectChange?.file ?? 'A project file'} changed — rescanned.`);
+  }, [projectChangeAt]);
+
+  // Server-pushed rescan: apply scan + health + onboarding directly.
+  const projectPushAt = socket.projectPush?.at ?? 0;
+  useEffect(() => {
+    if (projectPushAt === 0 || socket.projectPush === null) {
+      return;
+    }
+    projectState.applyServerPush(socket.projectPush);
+    setLastRefreshed(new Date());
+  }, [projectPushAt]);
+
+  // Finished runs stream into Recent Runs without a refresh.
+  const runRecordedAt = socket.runRecorded?.at ?? 0;
+  useEffect(() => {
+    if (runRecordedAt === 0 || socket.runRecorded === null) {
+      return;
+    }
+    projectState.prependHistory(socket.runRecorded.entry);
+  }, [runRecordedAt]);
+
+  // Registry changes (add/remove/prune) refresh the switcher everywhere.
+  useEffect(() => {
+    if (socket.workspacesChangedAt === 0) {
+      return;
+    }
+    void workspaceState.refresh();
+  }, [socket.workspacesChangedAt]);
+
+  // Announce live-connection drops and recoveries.
+  const previousConnection = useRef<typeof socket.connection>('connecting');
+  useEffect(() => {
+    const previous = previousConnection.current;
+    previousConnection.current = socket.connection;
+    if (previous === 'open' && socket.connection !== 'open') {
+      addToast('Live connection lost — reconnecting…');
+    }
+    if (previous === 'reconnecting' && socket.connection === 'open') {
+      addToast('Live connection restored.');
+      void refreshProject();
+    }
+  }, [socket.connection]);
+
+  // Pinned scripts are stored per project root.
+  const projectRoot = projectState.project?.root ?? null;
+  useEffect(() => {
+    if (projectRoot !== null) {
+      setPinned(readPinnedScripts(window.localStorage, projectRoot));
+    }
+  }, [projectRoot]);
+
+  function togglePin(script: string): void {
+    if (projectRoot !== null) {
+      setPinned(togglePinnedScript(window.localStorage, projectRoot, script));
+    }
+  }
+
+  // Tick once a second so elapsed times and "refreshed Xs ago" stay live.
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  // Browser-tab affordances: project name in the title, status dot on the favicon.
+  useEffect(() => {
+    if (projectState.project !== null) {
+      document.title = `${projectState.project.projectName} — DevSurface`;
+    }
+  }, [projectState.project]);
+
+  useEffect(() => {
+    applyStatusFavicon(faviconStateFromProcesses(processes));
+  }, [processes]);
+
+  // Browser notification when a watched process fails.
+  const [seenFailures] = useState(() => new Set<string>());
+  useEffect(() => {
+    if (!settings.notifyOnFailure || typeof Notification === 'undefined') {
+      return;
+    }
+    for (const processInfo of processes) {
+      if (processInfo.status === 'failed' && !seenFailures.has(processInfo.pid)) {
+        seenFailures.add(processInfo.pid);
+        if (Notification.permission === 'granted') {
+          new Notification(`DevSurface: ${processInfo.script} failed`, {
+            body: `${processInfo.command} exited with code ${processInfo.exitCode ?? 'unknown'}.`
+          });
+        }
+      }
+    }
+  }, [processes, settings.notifyOnFailure, seenFailures]);
 
   async function refreshProject(): Promise<void> {
     await projectState.refresh();
@@ -2333,6 +3682,160 @@ export default function App() {
     setDrawer(null);
     if (!opened) {
       window.alert('Unable to open the project folder.');
+    }
+  }
+
+  async function openEditor(): Promise<void> {
+    const opened = await postDashboardAction(`${wsPrefix}/open/editor`).catch(() => false);
+    setDrawer(null);
+    if (!opened) {
+      window.alert(
+        'No editor CLI was found. Install the VS Code "code" command or set DEVSURFACE_EDITOR.'
+      );
+    }
+  }
+
+  async function freeBusyPort(port: ScanResult['ports'][number]): Promise<void> {
+    const owner =
+      port.owner == null
+        ? 'the process using it'
+        : port.owner.name === null
+          ? `PID ${port.owner.pid}`
+          : `${port.owner.name} (PID ${port.owner.pid})`;
+    const confirmed = window.confirm(
+      `Free port ${port.port}?\n\nThis force-stops ${owner}. Unsaved work in that process is lost.`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    const response = await fetch(`${wsPrefix}/ports/${port.port}/free`, {
+      method: 'POST',
+      headers: await mutationHeaders()
+    }).catch(() => null);
+    if (response === null || !response.ok) {
+      const payload = (await response?.json().catch(() => null)) as { error?: string } | null;
+      window.alert(payload?.error ?? `Unable to free port ${port.port}.`);
+    }
+    await refreshProject();
+  }
+
+  async function stopAllProcesses(): Promise<void> {
+    const running = processes.filter((processInfo) => processInfo.status === 'running').length;
+    if (running === 0) {
+      addToast('Nothing is running.');
+      return;
+    }
+    if (!window.confirm(`Stop all ${running} running process${running === 1 ? '' : 'es'}?`)) {
+      return;
+    }
+    const response = await fetch(`${wsPrefix}/stop-all`, {
+      method: 'POST',
+      headers: await mutationHeaders()
+    }).catch(() => null);
+    if (response !== null && response.ok) {
+      addToast(`Stopped ${running} process${running === 1 ? '' : 'es'}.`);
+    }
+    await refreshProject();
+  }
+
+  async function restartScript(script: string, pid: string): Promise<void> {
+    await fetch(`${wsPrefix}/run/${encodeURIComponent(pid)}`, {
+      method: 'DELETE',
+      headers: await mutationHeaders()
+    }).catch(() => null);
+    // Give the process tree a moment to release ports before relaunching.
+    await new Promise((resolve) => window.setTimeout(resolve, 700));
+    const response = await fetch(`${wsPrefix}/run/${encodeURIComponent(script)}`, {
+      method: 'POST',
+      headers: await mutationHeaders()
+    }).catch(() => null);
+    addToast(
+      response !== null && response.ok ? `Restarted ${script}.` : `Unable to restart ${script}.`
+    );
+    await refreshProject();
+  }
+
+  async function launchProject(): Promise<void> {
+    const project = projectState.project;
+    if (project === null) {
+      return;
+    }
+    const plan = resolveLaunchPlan(project);
+    if (plan.steps.length === 0) {
+      addToast('Nothing to launch: no Docker services or dev/start script.');
+      return;
+    }
+    const description = plan.steps.map((step) => describeLaunchStep(step)).join('\n  ');
+    if (!window.confirm(`Run the launch sequence?\n\n  ${description}`)) {
+      return;
+    }
+
+    for (const step of plan.steps) {
+      addToast(`Launch: ${describeLaunchStep(step)}`);
+      if (step.kind === 'docker') {
+        for (const service of project.docker?.services ?? []) {
+          if (service.status !== 'running') {
+            await fetch(`${wsPrefix}/docker/${encodeURIComponent(service.name)}/start`, {
+              method: 'POST',
+              headers: await mutationHeaders()
+            }).catch(() => null);
+          }
+        }
+      } else if (step.kind === 'script') {
+        await fetch(`${wsPrefix}/run/${encodeURIComponent(step.name)}`, {
+          method: 'POST',
+          headers: await mutationHeaders()
+        }).catch(() => null);
+      } else {
+        await fetch(`${wsPrefix}/commands/${encodeURIComponent(step.name)}`, {
+          method: 'POST',
+          headers: await mutationHeaders()
+        }).catch(() => null);
+      }
+    }
+    setActiveView('logs');
+    await refreshProject();
+  }
+
+  function jumpToLogs(script: string): void {
+    setLogsPrefill(script);
+    setActiveView('logs');
+    setDrawer(null);
+  }
+
+  async function scanCommonPorts(): Promise<ScanResult['ports']> {
+    try {
+      const response = await fetch(`${wsPrefix}/ports/common`);
+      return response.ok ? ((await response.json()) as ScanResult['ports']) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  async function pruneWorkspaces(): Promise<void> {
+    await fetch('/api/workspaces/prune', {
+      method: 'POST',
+      headers: await mutationHeaders()
+    }).catch(() => null);
+    await workspaceState.refresh();
+  }
+
+  async function addWorkspace(path: string): Promise<string | null> {
+    try {
+      const response = await fetch('/api/workspaces', {
+        method: 'POST',
+        headers: { ...(await mutationHeaders()), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path })
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        return payload?.error ?? 'Unable to add workspace.';
+      }
+      await workspaceState.refresh();
+      return null;
+    } catch {
+      return 'Unable to reach the DevSurface server.';
     }
   }
 
@@ -2568,6 +4071,8 @@ export default function App() {
         <HubOverview
           workspaces={workspaceState.workspaces}
           onSwitch={workspaceState.switchWorkspace}
+          onPrune={pruneWorkspaces}
+          onAdd={addWorkspace}
         />
       </main>
     );
@@ -2640,6 +4145,13 @@ export default function App() {
       action: () => void openFolder()
     },
     {
+      id: 'action-editor',
+      label: 'Open in code editor',
+      group: 'Actions',
+      keywords: 'vscode code cursor ide edit',
+      action: () => void openEditor()
+    },
+    {
       id: 'action-install',
       label: 'Install dependencies',
       group: 'Actions',
@@ -2657,6 +4169,93 @@ export default function App() {
         window.open(`${wsPrefix}/passport`, '_blank', 'noreferrer');
       }
     },
+    {
+      id: 'action-theme-toggle',
+      label: resolvedTheme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme',
+      group: 'Actions',
+      keywords: 'theme dark light mode appearance color',
+      action: () => setThemePreference(toggledTheme(resolvedTheme))
+    },
+    {
+      id: 'action-theme-system',
+      label: 'Use system theme',
+      group: 'Actions',
+      keywords: 'theme auto system mode appearance',
+      action: () => setThemePreference('system')
+    },
+    {
+      id: 'action-shortcuts',
+      label: 'Show keyboard shortcuts',
+      group: 'Actions',
+      keywords: 'help keys keyboard hotkeys bindings',
+      action: () => setShortcutsOpen(true)
+    },
+    {
+      id: 'action-copy-path',
+      label: 'Copy project path',
+      group: 'Actions',
+      hint: projectState.project.root,
+      keywords: 'clipboard folder directory root path',
+      action: () => copyText(projectState.project?.root ?? '')
+    },
+    {
+      id: 'action-launch',
+      label: 'Launch project',
+      group: 'Actions',
+      hint: 'docker + dev script, in order',
+      keywords: 'up start sequence boot run everything',
+      action: () => void launchProject()
+    },
+    {
+      id: 'action-stop-all',
+      label: 'Stop all running processes',
+      group: 'Actions',
+      keywords: 'kill halt terminate everything panic',
+      action: () => void stopAllProcesses()
+    },
+    {
+      id: 'action-report',
+      label: 'Open Markdown report',
+      group: 'Actions',
+      hint: 'scan + health as Markdown',
+      keywords: 'markdown export report md docs',
+      action: () => {
+        window.open(`${wsPrefix}/report.md`, '_blank', 'noreferrer');
+      }
+    },
+    {
+      id: 'action-badge',
+      label: 'Open readiness badge (SVG)',
+      group: 'Actions',
+      keywords: 'badge svg readiness score shield',
+      action: () => {
+        window.open(`${wsPrefix}/badge.svg`, '_blank', 'noreferrer');
+      }
+    },
+    ...(projectState.project.docker?.services ?? []).map((service) => ({
+      id: `docker-${service.name}`,
+      label:
+        service.status === 'running'
+          ? `Stop Docker service ${service.name}`
+          : `Start Docker service ${service.name}`,
+      group: 'Services',
+      keywords: 'docker compose container service database',
+      action: () =>
+        void changeDockerService(service.name, service.status === 'running' ? 'stop' : 'start')
+    })),
+    ...projectState.project.ports
+      .filter((port) => port.inUse)
+      .map((port) => ({
+        id: `free-port-${port.port}`,
+        label: `Free port ${port.port}`,
+        hint:
+          port.owner?.name != null
+            ? `stops ${port.owner.name} (PID ${port.owner.pid})`
+            : 'stops the process using it',
+        group: 'Actions',
+        keywords: 'port busy kill stop conflict free',
+        action: () => void freeBusyPort(port)
+      })),
     ...Object.entries(projectState.project.scripts).map(([script, command]) => ({
       id: `script-${script}`,
       label: `Run ${script}`,
@@ -2686,6 +4285,12 @@ export default function App() {
       <Sidebar
         activeView={activeView}
         collapsed={sidebarCollapsed}
+        warningCount={projectState.health.filter((warning) => warning.severity !== 'info').length}
+        onboardingTodo={
+          projectState.onboarding?.steps.filter((step) => step.blocking && step.status !== 'done')
+            .length ?? 0
+        }
+        busyPortCount={projectState.project.ports.filter((port) => port.inUse).length}
         version={DEV_SURFACE_VERSION}
         onToggleCollapsed={() => setSidebarCollapsed((current) => !current)}
         onSelectView={(view) => {
@@ -2703,7 +4308,14 @@ export default function App() {
             activeId={workspaceState.activeId}
             onSwitch={workspaceState.switchWorkspace}
           />
-          <Topbar project={projectState.project} onRefresh={refreshProject} />
+          <Topbar
+            project={projectState.project}
+            theme={resolvedTheme}
+            lastRefreshed={lastRefreshed}
+            now={now}
+            onToggleTheme={() => setThemePreference(toggledTheme(resolvedTheme))}
+            onRefresh={refreshProject}
+          />
         </div>
         <div className="dashboard-frame">
           {activeView === 'overview' ? (
@@ -2725,8 +4337,10 @@ export default function App() {
                   }
                   onOpenTerminal={() => void openTerminal()}
                   onOpenFolder={() => void openFolder()}
+                  onOpenEditor={() => void openEditor()}
                   onViewPackage={() => void viewPackageJson()}
                   onInstall={() => void installDependencies()}
+                  onLaunch={() => void launchProject()}
                   onRunScript={() => {
                     if (firstScript !== null) {
                       setSelectedScript(firstScript);
@@ -2739,9 +4353,13 @@ export default function App() {
                   project={projectState.project}
                   processes={processes}
                   selectedScript={selectedScript}
+                  pinned={pinned}
+                  now={now}
                   onRun={runScript}
                   onStop={stopProcess}
+                  onRestart={restartScript}
                   onSelect={setSelectedScript}
+                  onTogglePin={togglePin}
                 />
               </div>
               <aside className="inspector-column">
@@ -2782,6 +4400,7 @@ export default function App() {
           ) : activeView === 'onboarding' ? (
             <OnboardingView
               plan={projectState.onboarding}
+              project={projectState.project}
               onRunStep={(step) => void runOnboardingStep(step)}
               onRefresh={refreshProject}
             />
@@ -2806,6 +4425,14 @@ export default function App() {
               onRefresh={refreshProject}
               onSettingsChange={setSettings}
               onSetEnv={setEnvKeyValue}
+              onFreePort={freeBusyPort}
+              onScanCommonPorts={scanCommonPorts}
+              onJumpToLogs={jumpToLogs}
+              onStopAll={stopAllProcesses}
+              logsPrefill={logsPrefill}
+              history={projectState.history}
+              themePreference={themePreference}
+              onThemeChange={setThemePreference}
             />
           )}
         </div>
@@ -2828,9 +4455,39 @@ export default function App() {
         onLoadDockerLogs={loadDockerLogs}
         onClose={() => setDrawer(null)}
         onSettingsChange={setSettings}
+        themePreference={themePreference}
+        onThemeChange={setThemePreference}
       />
       {paletteOpen ? (
-        <CommandPalette items={paletteItems} onClose={() => setPaletteOpen(false)} />
+        <CommandPalette
+          items={(() => {
+            const recents = readPaletteRecents();
+            const rank = (id: string): number => {
+              const index = recents.indexOf(id);
+              return index === -1 ? Number.MAX_SAFE_INTEGER : index;
+            };
+            return [...paletteItems]
+              .sort((left, right) => rank(left.id) - rank(right.id))
+              .map((item) => ({
+                ...item,
+                action: () => {
+                  recordPaletteRecent(item.id);
+                  item.action();
+                }
+              }));
+          })()}
+          onClose={() => setPaletteOpen(false)}
+        />
+      ) : null}
+      {shortcutsOpen ? <ShortcutsHelp onClose={() => setShortcutsOpen(false)} /> : null}
+      {toasts.length > 0 ? (
+        <div className="toast-stack" role="status" aria-live="polite">
+          {toasts.map((toast) => (
+            <div className="toast" key={toast.id}>
+              {toast.message}
+            </div>
+          ))}
+        </div>
       ) : null}
     </main>
   );

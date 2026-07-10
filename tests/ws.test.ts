@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import { AddressInfo } from 'node:net';
+import { promises as fs } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 import path from 'node:path';
@@ -217,5 +218,108 @@ describe('websocket security', () => {
     expect(await unexpectedB).toBe('quiet');
     socketA.close();
     socketB.close();
+  });
+});
+
+function collectMessages(socket: WebSocket): string[] {
+  const messages: string[] = [];
+  socket.on('message', (data) => messages.push(String(data)));
+  return messages;
+}
+
+async function waitFor(predicate: () => boolean, timeoutMs = 8000): Promise<void> {
+  const start = Date.now();
+  while (!predicate()) {
+    if (Date.now() - start > timeoutMs) {
+      throw new Error('Timed out waiting for websocket message.');
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
+
+describe('live websocket pushes', () => {
+  it('pushes run-recorded when a process finishes', async () => {
+    const dataDir = await tempDir();
+    const project = await tempDir();
+    await writeJson(path.join(project, 'package.json'), { name: 'ws-live', scripts: {} });
+
+    const hub = new Hub({ dataDir });
+    const entry = await hub.registry.add(project);
+    const runtime = hub.ensure(entry);
+    const server = await createHubWsServer(hub);
+    const sameOrigin = server.url.replace('ws://', 'http://').replace('/ws', '');
+    const socket = new WebSocket(`${server.url}?workspace=${encodeURIComponent(entry.id)}`, {
+      headers: { Origin: sameOrigin }
+    });
+    const messages = collectMessages(socket);
+    await waitFor(() => messages.some((message) => message.includes('"type":"hello"')));
+
+    runtime.processManager.start({
+      cwd: project,
+      script: 'probe',
+      command: process.execPath,
+      args: ['-e', 'console.log("done")'],
+      displayCommand: 'node -e'
+    });
+
+    await waitFor(() => messages.some((message) => message.includes('"type":"run-recorded"')));
+    const recorded = messages.find((message) => message.includes('"type":"run-recorded"'));
+    expect(recorded).toContain('"script":"probe"');
+    socket.close();
+  });
+
+  it('pushes project-changed and a full project-updated after a file change', async () => {
+    const dataDir = await tempDir();
+    const project = await tempDir();
+    await writeJson(path.join(project, 'package.json'), { name: 'ws-watch', scripts: {} });
+
+    const hub = new Hub({ dataDir });
+    const entry = await hub.registry.add(project);
+    hub.ensure(entry);
+    const server = await createHubWsServer(hub);
+    const sameOrigin = server.url.replace('ws://', 'http://').replace('/ws', '');
+    const socket = new WebSocket(`${server.url}?workspace=${encodeURIComponent(entry.id)}`, {
+      headers: { Origin: sameOrigin }
+    });
+    const messages = collectMessages(socket);
+    await waitFor(() => messages.some((message) => message.includes('"type":"hello"')));
+
+    await fs.writeFile(
+      path.join(project, 'package.json'),
+      JSON.stringify({ name: 'ws-watch-renamed', scripts: { dev: 'vite' } }),
+      'utf8'
+    );
+
+    await waitFor(() => messages.some((message) => message.includes('"type":"project-changed"')));
+    await waitFor(() => messages.some((message) => message.includes('"type":"project-updated"')));
+    const updated = messages.find((message) => message.includes('"type":"project-updated"'));
+    expect(updated).toContain('ws-watch-renamed');
+    expect(updated).toContain('"health"');
+    expect(updated).toContain('"onboarding"');
+    socket.close();
+  }, 20000);
+
+  it('broadcasts workspaces-changed to every client', async () => {
+    const dataDir = await tempDir();
+    const project = await tempDir();
+    await writeJson(path.join(project, 'package.json'), { name: 'ws-registry', scripts: {} });
+
+    const hub = new Hub({ dataDir });
+    const entry = await hub.registry.add(project);
+    hub.ensure(entry);
+    const server = await createHubWsServer(hub);
+    const sameOrigin = server.url.replace('ws://', 'http://').replace('/ws', '');
+    const socket = new WebSocket(`${server.url}?workspace=${encodeURIComponent(entry.id)}`, {
+      headers: { Origin: sameOrigin }
+    });
+    const messages = collectMessages(socket);
+    await waitFor(() => messages.some((message) => message.includes('"type":"hello"')));
+
+    hub.events.emit('workspaces-changed');
+
+    await waitFor(() =>
+      messages.some((message) => message.includes('"type":"workspaces-changed"'))
+    );
+    socket.close();
   });
 });

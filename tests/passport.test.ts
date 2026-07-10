@@ -21,6 +21,19 @@ function baseScan(overrides: Partial<ScanResult> = {}): ScanResult {
     ports: [],
     readme: { path: null, exists: false },
     license: { path: null, exists: false },
+    monorepo: null,
+    dependencies: null,
+    toolchain: {
+      testRunner: null,
+      linter: null,
+      formatter: null,
+      bundler: null,
+      orm: null,
+      styling: null,
+      ci: null
+    },
+    nodeRequirement: null,
+    readmeCommands: [],
     config: null,
     ...overrides
   };
@@ -67,6 +80,7 @@ describe('renderPassportHtml', () => {
           localKeys: [],
           missingKeys: [],
           emptyKeys: [],
+          extraKeys: [],
           keys: []
         }
       })
@@ -151,6 +165,7 @@ describe('renderPassportHtml', () => {
           localKeys: [],
           missingKeys: ['API_KEY'],
           emptyKeys: [],
+          extraKeys: [],
           keys: []
         }
       })
@@ -199,6 +214,7 @@ describe('renderPassportHtml', () => {
           localKeys: ['API_KEY'],
           missingKeys: ['DB_URL'],
           emptyKeys: [],
+          extraKeys: [],
           keys: [
             { key: 'API_KEY', present: true, empty: false },
             { key: 'DB_URL', present: false, empty: false }

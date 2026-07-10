@@ -18,6 +18,12 @@ import {
 } from '../../core/process/runner.js';
 import { runDoctor } from '../../core/doctor/index.js';
 import { setEnvValue } from '../../core/env/write.js';
+import { renderMarkdownReport } from '../../core/report/markdown.js';
+import { renderReadinessBadge } from '../../core/badge/index.js';
+import { freePort } from '../../core/ports/free.js';
+import { detectPorts } from '../../core/scanner/ports.js';
+import { findPortOwners } from '../../core/scanner/portOwner.js';
+import type { RunHistoryStore } from '../../core/history/index.js';
 import { buildOnboardingPlan } from '../../core/onboarding/index.js';
 import { renderPassportHtml } from '../../core/passport/index.js';
 import { scanProject } from '../../core/scanner/index.js';
@@ -226,6 +232,77 @@ function openTerminalAt(root: string): boolean {
   return launchDetached(terminal.command, terminal.args, root);
 }
 
+/**
+ * Pick the editor to open the project in: DEVSURFACE_EDITOR when set (a plain
+ * command name on the PATH), otherwise the first common editor CLI found.
+ */
+function resolveEditorCommand(): string | null {
+  const configured = process.env.DEVSURFACE_EDITOR?.trim();
+  if (
+    configured !== undefined &&
+    configured.length > 0 &&
+    isAllowedTerminalCommand(configured) &&
+    findExecutable(configured) !== null
+  ) {
+    return configured;
+  }
+
+  const candidates =
+    process.platform === 'win32'
+      ? ['code.cmd', 'code.exe', 'cursor.cmd', 'codium.cmd']
+      : ['code', 'cursor', 'codium', 'subl'];
+  return candidates.find((candidate) => findExecutable(candidate) !== null) ?? null;
+}
+
+function openEditorAt(root: string): boolean {
+  const editor = resolveEditorCommand();
+  if (editor === null) {
+    return false;
+  }
+  return launchDetached(editor, [root], root);
+}
+
+const SERVER_STARTED_AT = Date.now();
+
+/** Ports dev tools habitually claim; scanned on demand from the Ports view. */
+const COMMON_DEV_PORTS = [
+  3000, 3001, 3306, 4000, 4200, 4321, 4567, 5000, 5173, 5432, 5555, 6006, 6379, 7000, 8000, 8080,
+  8081, 8888, 9000, 9090, 27017
+];
+
+/** Probe the common dev ports and attach owners to the busy ones. */
+async function commonPortsResponse(context: {
+  json: (data: unknown) => Response;
+}): Promise<Response> {
+  const probes = (await detectPorts(COMMON_DEV_PORTS)) ?? [];
+  const busy = probes.filter((probe) => probe.inUse).map((probe) => probe.port);
+  if (busy.length > 0) {
+    const owners = await findPortOwners(busy);
+    for (const probe of probes) {
+      if (probe.inUse) {
+        probe.owner = owners.get(probe.port) ?? null;
+      }
+    }
+  }
+  return context.json(probes);
+}
+
+/** Shared handler for the port-free endpoints (hub and legacy). */
+async function freePortResponse(
+  port: string,
+  context: { json: (data: unknown, status?: 200 | 400 | 409) => Response }
+): Promise<Response> {
+  const parsed = Number(port);
+  if (!Number.isInteger(parsed) || parsed <= 0 || parsed > 65535) {
+    return context.json({ error: 'Invalid port number.' }, 400);
+  }
+  const result = await freePort(parsed);
+  if (!result.freed) {
+    return context.json(result, 409);
+  }
+  return context.json(result);
+}
+
 function handleDockerError(
   error: unknown,
   context: { json: (data: unknown, status: number) => Response }
@@ -301,8 +378,64 @@ function registerWorkspaceRoutes(
     root: string;
     processManager: ProcessManager;
     dockerController: DockerController;
-  } | null>
+  } | null>,
+  history?: RunHistoryStore,
+  onWorkspaceMutated?: (id: string) => void
 ): void {
+  app.get('/api/workspaces/:id/history', async (context) => {
+    const ws = await resolveWorkspace(context.req.param('id'));
+    if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
+    return context.json(history === undefined ? [] : await history.list(ws.root));
+  });
+
+  app.post('/api/workspaces/:id/ports/:port/free', async (context) => {
+    const ws = await resolveWorkspace(context.req.param('id'));
+    if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
+    return freePortResponse(context.req.param('port'), context);
+  });
+
+  app.post('/api/workspaces/:id/open/editor', async (context) => {
+    const ws = await resolveWorkspace(context.req.param('id'));
+    if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
+    const opened = openEditorAt(ws.root);
+    return context.json({ opened, target: 'editor' }, opened ? 200 : 501);
+  });
+
+  app.get('/api/workspaces/:id/ports/common', async (context) => {
+    const ws = await resolveWorkspace(context.req.param('id'));
+    if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
+    return commonPortsResponse(context);
+  });
+
+  app.get('/api/workspaces/:id/report.md', async (context) => {
+    const ws = await resolveWorkspace(context.req.param('id'));
+    if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
+    const scan = await scanProject(ws.root);
+    const warnings = await runDoctor(ws.root, scan);
+    const plan = buildOnboardingPlan(scan, warnings);
+    context.header('Content-Type', 'text/markdown; charset=utf-8');
+    return context.body(renderMarkdownReport(scan, warnings, plan));
+  });
+
+  app.get('/api/workspaces/:id/badge.svg', async (context) => {
+    const ws = await resolveWorkspace(context.req.param('id'));
+    if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
+    const scan = await scanProject(ws.root);
+    const warnings = await runDoctor(ws.root, scan);
+    const plan = buildOnboardingPlan(scan, warnings);
+    context.header('Content-Type', 'image/svg+xml');
+    context.header('Cache-Control', 'no-cache');
+    return context.body(renderReadinessBadge(plan.readiness));
+  });
+
+  app.post('/api/workspaces/:id/stop-all', async (context) => {
+    const ws = await resolveWorkspace(context.req.param('id'));
+    if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
+    const running = ws.processManager.list().filter((p) => p.status === 'running').length;
+    ws.processManager.killAll();
+    return context.json({ stopped: running });
+  });
+
   app.get('/api/workspaces/:id/project', async (context) => {
     const ws = await resolveWorkspace(context.req.param('id'));
     if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
@@ -351,22 +484,28 @@ function registerWorkspaceRoutes(
   });
 
   app.post('/api/workspaces/:id/docker/:service/start', async (context) => {
-    const ws = await resolveWorkspace(context.req.param('id'));
+    const id = context.req.param('id');
+    const ws = await resolveWorkspace(id);
     if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
     const service = decodeURIComponent(context.req.param('service'));
     try {
-      return context.json(await ws.dockerController.start(service));
+      const result = await ws.dockerController.start(service);
+      onWorkspaceMutated?.(id);
+      return context.json(result);
     } catch (error) {
       return handleDockerError(error, context);
     }
   });
 
   app.post('/api/workspaces/:id/docker/:service/stop', async (context) => {
-    const ws = await resolveWorkspace(context.req.param('id'));
+    const id = context.req.param('id');
+    const ws = await resolveWorkspace(id);
     if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
     const service = decodeURIComponent(context.req.param('service'));
     try {
-      return context.json(await ws.dockerController.stop(service));
+      const result = await ws.dockerController.stop(service);
+      onWorkspaceMutated?.(id);
+      return context.json(result);
     } catch (error) {
       return handleDockerError(error, context);
     }
@@ -556,8 +695,14 @@ export function registerHubApiRoutes(
     return context.json({ token: options.mutationToken });
   });
 
-  app.get('/api/hub/status', (context) => {
-    return context.json({ status: 'running', version: DEV_SURFACE_VERSION });
+  app.get('/api/hub/status', async (context) => {
+    const entries = await hub.registry.list();
+    return context.json({
+      status: 'running',
+      version: DEV_SURFACE_VERSION,
+      uptimeSeconds: Math.round((Date.now() - SERVER_STARTED_AT) / 1000),
+      workspaceCount: entries.length
+    });
   });
 
   app.get('/api/workspaces', async (context) => {
@@ -571,6 +716,7 @@ export function registerHubApiRoutes(
     }
     try {
       const entry = await hub.registry.add(body.path);
+      hub.events.emit('workspaces-changed');
       return context.json(entry, 201);
     } catch (error) {
       return context.json({ error: error instanceof Error ? error.message : 'Invalid path.' }, 400);
@@ -584,10 +730,23 @@ export function registerHubApiRoutes(
       runtime.processManager.killAll();
     }
     const removed = await hub.registry.remove(id);
+    if (removed) {
+      hub.events.emit('workspaces-changed');
+    }
     return context.json({ removed }, removed ? 200 : 404);
   });
 
-  registerWorkspaceRoutes(app, resolveWorkspace);
+  app.post('/api/workspaces/prune', async (context) => {
+    const removed = await hub.registry.prune();
+    if (removed.length > 0) {
+      hub.events.emit('workspaces-changed');
+    }
+    return context.json({ removed });
+  });
+
+  registerWorkspaceRoutes(app, resolveWorkspace, hub.history, (id) =>
+    hub.events.emit('workspace-updated', id)
+  );
 
   // Backward-compatible single-project aliases: proxy to the first workspace
   app.get('/api/project', async (context) => {
@@ -646,7 +805,12 @@ export function registerApiRoutes(
   });
 
   app.get('/api/hub/status', (context) => {
-    return context.json({ status: 'running', version: DEV_SURFACE_VERSION });
+    return context.json({
+      status: 'running',
+      version: DEV_SURFACE_VERSION,
+      uptimeSeconds: Math.round((Date.now() - SERVER_STARTED_AT) / 1000),
+      workspaceCount: 1
+    });
   });
 
   app.get('/api/project', async (context) => {
@@ -802,6 +966,25 @@ export function registerApiRoutes(
   app.post('/api/open/terminal', (context) => {
     const opened = openTerminalAt(options.projectRoot);
     return context.json({ opened, target: 'terminal' }, opened ? 200 : 501);
+  });
+
+  app.post('/api/open/editor', (context) => {
+    const opened = openEditorAt(options.projectRoot);
+    return context.json({ opened, target: 'editor' }, opened ? 200 : 501);
+  });
+
+  app.post('/api/ports/:port/free', async (context) => {
+    return freePortResponse(context.req.param('port'), context);
+  });
+
+  app.get('/api/ports/common', async (context) => {
+    return commonPortsResponse(context);
+  });
+
+  app.post('/api/stop-all', (context) => {
+    const running = options.processManager.list().filter((p) => p.status === 'running').length;
+    options.processManager.killAll();
+    return context.json({ stopped: running });
   });
 
   app.post('/api/env/copy', async (context) => {

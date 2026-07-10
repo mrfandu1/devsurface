@@ -182,6 +182,22 @@ function heroBadges(scan: ScanResult): string {
   if (scan.git?.branch != null) {
     badges.push(`branch: ${scan.git.branch}`);
   }
+  if (scan.monorepo !== null) {
+    badges.push(
+      scan.monorepo.packageCount > 0
+        ? `monorepo: ${scan.monorepo.packageCount} packages`
+        : 'monorepo'
+    );
+  }
+  if (typeof scan.git?.commitCount === 'number' && scan.git.commitCount > 0) {
+    badges.push(`${scan.git.commitCount} commits`);
+  }
+  if (scan.git?.latestTag != null) {
+    badges.push(`latest: ${scan.git.latestTag}`);
+  }
+  if (scan.licenseType != null) {
+    badges.push(`${scan.licenseType} licensed`);
+  }
   return badges
     .map((badge) => `<span class="badge badge-hero">${escapeHtml(badge)}</span>`)
     .join('\n          ');
@@ -225,6 +241,9 @@ function quickStartSection(scan: ScanResult): string {
   const start = startCommand(scan);
   if (start !== null) {
     rows.push(commandRow(start, 'Start the app'));
+  }
+  if ((scan.config?.config.launch?.length ?? 0) > 0) {
+    rows.push(commandRow('npx devsurface up', 'Or launch everything in order with one command'));
   }
   if (rows.length === 0) {
     return '';
@@ -363,6 +382,37 @@ ${cells}
   </section>`;
 }
 
+/** The everyday tools a contributor will meet, in one friendly grid. */
+function toolchainSection(scan: ScanResult): string {
+  const entries: Array<[string, string | null]> = [
+    ['Tests run with', scan.toolchain.testRunner],
+    ['Code is checked by', scan.toolchain.linter],
+    ['Formatting is handled by', scan.toolchain.formatter],
+    ['The app is built with', scan.toolchain.bundler],
+    ['The database layer is', scan.toolchain.orm],
+    ['Styling uses', scan.toolchain.styling],
+    ['CI runs on', scan.toolchain.ci]
+  ];
+  const present = entries.filter((entry): entry is [string, string] => entry[1] !== null);
+  if (present.length === 0) {
+    return '';
+  }
+  const cells = present
+    .map(
+      ([role, tool]) => `      <div class="stack-cell">
+        <code>${escapeHtml(tool)}</code>
+        <span>${escapeHtml(role)}</span>
+      </div>`
+    )
+    .join('\n');
+  return `  <section id="toolchain">
+    <h2>The everyday tools</h2>
+    <div class="stack-grid">
+${cells}
+    </div>
+  </section>`;
+}
+
 function scriptsSection(scan: ScanResult): string {
   const entries = Object.entries(scan.scripts);
   if (entries.length === 0) {
@@ -400,6 +450,7 @@ function envSection(scan: ScanResult): string {
           state: key.present ? (key.empty ? 'empty' : 'set') : 'missing'
         }))
       : env.exampleKeys.map((key) => ({ key, state: 'missing' as const }));
+  const hasDescriptions = Object.keys(env.descriptions ?? {}).length > 0;
   const rows = keys
     .map((entry) => {
       const badge =
@@ -408,12 +459,19 @@ function envSection(scan: ScanResult): string {
           : entry.state === 'empty'
             ? '<span class="badge badge-todo">Empty</span>'
             : '<span class="badge badge-error">Missing</span>';
-      return `      <tr><td><code>${escapeHtml(entry.key)}</code></td><td>${badge}</td></tr>`;
+      const description = env.descriptions?.[entry.key];
+      const descriptionCell = hasDescriptions
+        ? `<td class="muted">${description !== undefined ? escapeHtml(description) : ''}</td>`
+        : '';
+      return `      <tr><td><code>${escapeHtml(entry.key)}</code></td><td>${badge}</td>${descriptionCell}</tr>`;
     })
     .join('\n');
+  const headerRow = hasDescriptions
+    ? '<tr><th>Setting</th><th>Status</th><th>What it is</th></tr>'
+    : '<tr><th>Setting</th><th>Status</th></tr>';
   return `<p class="muted">Only key names are shown. Values never leave your machine.</p>
     <table>
-      <thead><tr><th>Setting</th><th>Status</th></tr></thead>
+      <thead>${headerRow}</thead>
       <tbody>
 ${rows}
       </tbody>
@@ -516,6 +574,73 @@ function troubleshootingSection(scan: ScanResult): string {
     <h2>If something goes wrong</h2>
     <ul class="steps">
 ${items}
+    </ul>
+  </section>`;
+}
+
+/** Plain-English one-liners for the licenses newcomers actually meet. */
+const LICENSE_BLURBS: Record<string, string> = {
+  MIT: 'You can use, copy, change, and share this code — even commercially — as long as you keep the copyright notice.',
+  'Apache-2.0':
+    'You can use and change this code freely, including commercially. It also gives you an explicit patent license.',
+  ISC: 'A very permissive license, equivalent to MIT: use, change, and share freely with attribution.',
+  BSD: 'A permissive license: use and change freely, keep the copyright notice, and do not use the authors’ names to promote your fork.',
+  'GPL-3.0':
+    'You can use and change this code, but anything you distribute that includes it must also be open source under the GPL.',
+  'GPL-2.0':
+    'You can use and change this code, but anything you distribute that includes it must also be open source under the GPL.',
+  'AGPL-3.0':
+    'Like the GPL, but running the software as a network service also counts as distribution — services built on it must share their source.',
+  LGPL: 'You can link to this code from your own software freely; changes to the library itself must stay open source.',
+  'MPL-2.0':
+    'You can mix this code into larger works, but changes to the covered files themselves must stay open source.',
+  Unlicense: 'Public domain: do absolutely anything with it, no attribution required.'
+};
+
+/** Where to go for licensing terms and contribution ground rules. */
+function projectFactsSection(scan: ScanResult): string {
+  const items: string[] = [];
+  if (scan.licenseType !== null && scan.licenseType !== undefined) {
+    const blurb = LICENSE_BLURBS[scan.licenseType];
+    items.push(
+      `      <li><strong>License: ${escapeHtml(scan.licenseType)}</strong>${
+        blurb !== undefined ? ` — ${escapeHtml(blurb)}` : ''
+      }</li>`
+    );
+  }
+  if (scan.community?.contributing === true) {
+    items.push(
+      '      <li><strong>CONTRIBUTING guide</strong> — the repo has ground rules for contributions; read CONTRIBUTING.md before opening a pull request.</li>'
+    );
+  }
+  if (scan.community?.codeOfConduct === true) {
+    items.push(
+      '      <li><strong>Code of conduct</strong> — community behavior expectations live in CODE_OF_CONDUCT.md.</li>'
+    );
+  }
+  if (scan.changelog?.exists === true) {
+    items.push(
+      `      <li><strong>CHANGELOG</strong> — release history is tracked in the repo${
+        scan.changelog.latestVersion !== null
+          ? ` (newest entry: ${escapeHtml(scan.changelog.latestVersion)})`
+          : ''
+      }.</li>`
+    );
+  }
+  if ((scan.vscodeExtensions?.length ?? 0) > 0) {
+    items.push(
+      `      <li><strong>Recommended VS Code extensions</strong> — the repo suggests ${escapeHtml(
+        (scan.vscodeExtensions ?? []).slice(0, 5).join(', ')
+      )}. VS Code offers to install them when you open the folder.</li>`
+    );
+  }
+  if (items.length === 0) {
+    return '';
+  }
+  return `  <section id="facts">
+    <h2>Good to know</h2>
+    <ul class="plain-list">
+${items.join('\n')}
     </ul>
   </section>`;
 }
@@ -676,6 +801,8 @@ export function renderPassportHtml(options: PassportOptions): string {
   const quickStart = quickStartSection(scan);
   const requirements = requirementsSection(scan);
   const stack = stackSection(scan);
+  const toolchain = toolchainSection(scan);
+  const facts = projectFactsSection(scan);
   const docker = dockerSection(scan);
   const readinessLabel = plan.ready
     ? 'Ready to run'
@@ -686,6 +813,8 @@ export function renderPassportHtml(options: PassportOptions): string {
   if (requirements !== '') tocEntries.push(['#requirements', 'What you need']);
   tocEntries.push(['#setup', 'Setup steps']);
   if (stack !== '') tocEntries.push(['#stack', 'Tech stack']);
+  if (toolchain !== '') tocEntries.push(['#toolchain', 'Everyday tools']);
+  if (facts !== '') tocEntries.push(['#facts', 'Good to know']);
   tocEntries.push(['#commands', 'Commands']);
   tocEntries.push(['#settings', 'Settings']);
   tocEntries.push(['#troubleshooting', 'Troubleshooting']);
@@ -729,6 +858,8 @@ ${requirements}
   </section>
 
 ${stack}
+${toolchain}
+${facts}
   <section id="commands">
     <h2>Every command, explained</h2>
     ${scriptsSection(scan)}

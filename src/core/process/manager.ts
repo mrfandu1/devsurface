@@ -139,6 +139,10 @@ export class ProcessManager extends EventEmitter {
       this.killAll();
       process.exit(130);
     });
+    process.once('SIGTERM', () => {
+      this.killAll();
+      process.exit(143);
+    });
   }
 
   private emitLog(record: ProcessRecord, stream: ProcessLogEvent['stream'], message: string): void {

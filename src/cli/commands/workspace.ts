@@ -9,9 +9,14 @@ export async function workspaceAddCommand(dirPath?: string): Promise<void> {
   console.log(`Added workspace ${pc.cyan(entry.name)} (${entry.id}) -> ${entry.path}`);
 }
 
-export async function workspaceListCommand(): Promise<void> {
+export async function workspaceListCommand(options: { json?: boolean } = {}): Promise<void> {
   const registry = new WorkspaceRegistry();
   const entries = await registry.list();
+
+  if (options.json === true) {
+    console.log(JSON.stringify(entries, null, 2));
+    return;
+  }
 
   if (entries.length === 0) {
     console.log(
@@ -24,6 +29,19 @@ export async function workspaceListCommand(): Promise<void> {
   for (const entry of entries) {
     console.log(`  ${pc.cyan(entry.name)} (${entry.id})`);
     console.log(`    ${entry.path}`);
+  }
+}
+
+export async function workspacePruneCommand(): Promise<void> {
+  const registry = new WorkspaceRegistry();
+  const removed = await registry.prune();
+  if (removed.length === 0) {
+    console.log('All registered workspaces still exist. Nothing to prune.');
+    return;
+  }
+  console.log(`Pruned ${removed.length} workspace${removed.length === 1 ? '' : 's'}:`);
+  for (const entry of removed) {
+    console.log(`  ${pc.cyan(entry.name)} (${entry.id}) — ${entry.path}`);
   }
 }
 
