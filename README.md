@@ -169,6 +169,17 @@ Run DevSurface without installing it globally:
 | `devsurface why "<error>"`         | Translate a scary error message into plain English (also via pipe).   |
 | `devsurface system`                | Check whether this computer has the tools the project needs.          |
 | `devsurface search <query>`        | Search scripts, env keys, ports, services, and the glossary at once.  |
+| `devsurface notes`                 | Personal per-project notes and checklists (stored outside the repo).  |
+| `devsurface todos`                 | List every TODO/FIXME/HACK comment left in the code.                  |
+| `devsurface stats`                 | Code statistics: lines by language, largest files (`--json`).         |
+| `devsurface deps`                  | Explain every installed dependency; `--licenses` for the rollup.      |
+| `devsurface commits`               | Recent commits, contributors, and uncommitted changes, human-first.   |
+| `devsurface clean`                 | Show reclaimable disk space; `--delete <name>` with confirmation.     |
+| `devsurface snapshot [diff]`       | Freeze the project state; later ask "what changed since?".            |
+| `devsurface bundle`                | Write a shareable, secret-free Markdown help bundle.                  |
+| `devsurface watch`                 | Live terminal status: ports, services, health, every 5 seconds.       |
+| `devsurface doctor --fix`          | Apply every safe automatic fix, then re-run the checkup.              |
+| `devsurface completions <shell>`   | Tab-completion script for bash, zsh, or PowerShell.                   |
 | `devsurface history`               | Show recent script runs recorded by the dashboard (`--json`).         |
 | `devsurface badge`                 | Generate a setup-readiness SVG badge for the README.                  |
 | `devsurface ports --free <port>`   | Stop the process occupying a port (with safety guardrails).           |

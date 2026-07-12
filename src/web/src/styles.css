@@ -3427,3 +3427,384 @@ html[data-theme='dark'] .ansi-cyan {
   --c-d4d4cf: var(--c-76766f);
   --c-e3e3df: var(--c-8a8a83);
 }
+
+/* ── Notes view ──────────────────────────────────────────────────────────── */
+
+.note-form {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.note-form .glossary-search {
+  flex: 1;
+  min-width: 220px;
+  margin-bottom: 0;
+}
+
+.note-checklist-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--c-66665f);
+  white-space: nowrap;
+}
+
+.notes-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.notes-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--c-e3e3df);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--ov-card-46);
+}
+
+.notes-list li.done .note-text {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+
+.note-dot {
+  color: var(--c-8b8b84);
+}
+
+.note-text {
+  flex: 1;
+  font-size: 0.88rem;
+  overflow-wrap: anywhere;
+}
+
+.note-actions {
+  display: inline-flex;
+  gap: 6px;
+  flex: none;
+}
+
+.learn-error-text {
+  color: var(--c-a20d17);
+  font-size: 0.85rem;
+}
+
+/* ── Insights view ───────────────────────────────────────────────────────── */
+
+.insights-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.insights-tabs button {
+  border: 1px solid var(--c-d4d4cf);
+  border-radius: 999px;
+  background: var(--ov-card-46);
+  color: var(--c-51514d);
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+
+.insights-tabs button.active {
+  border-color: var(--c-111111);
+  color: var(--c-111111);
+  font-weight: 600;
+}
+
+.todo-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.todo-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.todo-marker {
+  flex: none;
+  border-radius: 4px;
+  padding: 1px 7px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  border: 1px solid var(--c-d4d4cf);
+}
+
+.todo-fixme,
+.todo-bug {
+  color: var(--c-a20d17);
+  border-color: var(--c-a20d17);
+}
+
+.todo-hack,
+.todo-xxx {
+  color: var(--c-b36b00);
+  border-color: var(--c-b36b00);
+}
+
+.todo-todo {
+  color: var(--c-4a6da3);
+  border-color: var(--c-4a6da3);
+}
+
+.todo-text {
+  flex: 1;
+  min-width: 200px;
+}
+
+.todo-file {
+  color: var(--c-8b8b84);
+  font-size: 0.75rem;
+}
+
+.stats-bars {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.stats-bar-row {
+  display: grid;
+  grid-template-columns: 160px 1fr 110px;
+  gap: 10px;
+  align-items: center;
+  font-size: 0.82rem;
+}
+
+.stats-bar {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--c-eeeeea);
+  overflow: hidden;
+}
+
+.stats-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--c-4a6da3);
+}
+
+.stats-lines {
+  text-align: right;
+  color: var(--c-66665f);
+}
+
+.plain-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  font-size: 0.85rem;
+}
+
+.deps-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.deps-list li {
+  border-bottom: 1px dashed var(--c-e3e3df);
+  padding-bottom: 8px;
+}
+
+.deps-head {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  font-size: 0.88rem;
+}
+
+.deps-list p {
+  margin: 2px 0 0;
+  color: var(--c-66665f);
+  font-size: 0.82rem;
+}
+
+.commit-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.commit-list li {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+}
+
+.commit-subject {
+  flex: 1;
+  min-width: 200px;
+}
+
+.doc-link {
+  border: none;
+  background: none;
+  color: var(--c-4a6da3);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 2px 0;
+  text-align: left;
+}
+
+.doc-link:hover {
+  text-decoration: underline;
+}
+
+.doc-viewer {
+  font-size: 0.9rem;
+  line-height: 1.65;
+  max-width: 760px;
+}
+
+.doc-viewer pre {
+  border: 1px solid var(--c-e3e3df);
+  border-radius: 8px;
+  background: var(--ov-card-46);
+  padding: 10px 12px;
+  overflow-x: auto;
+  font-size: 0.8rem;
+}
+
+.doc-viewer blockquote {
+  border-left: 3px solid var(--c-d4d4cf);
+  margin: 8px 0;
+  padding: 2px 12px;
+  color: var(--c-66665f);
+}
+
+/* ── Toolbox view ────────────────────────────────────────────────────────── */
+
+.toolbox-status {
+  border-color: var(--c-d1c7aa);
+  background: var(--c-fff9e8);
+  color: var(--c-725400);
+  font-size: 0.88rem;
+}
+
+.cleanup-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.cleanup-list li {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  border: 1px solid var(--c-e3e3df);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.85rem;
+}
+
+.cleanup-note {
+  flex: 1;
+  min-width: 180px;
+  font-size: 0.78rem;
+}
+
+.minor-button.danger {
+  color: var(--c-a20d17);
+  border-color: var(--c-a20d17);
+}
+
+.diff-list li {
+  padding: 3px 0;
+}
+
+.bundle-download {
+  display: inline-block;
+  text-decoration: none;
+}
+
+/* ── Tour, fixes, ports ──────────────────────────────────────────────────── */
+
+.tour-modal {
+  max-width: 480px;
+}
+
+.tour-body {
+  font-size: 0.95rem;
+  line-height: 1.6;
+  min-height: 84px;
+}
+
+.tour-dots {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+
+.tour-dots i {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--c-d4d4cf);
+}
+
+.tour-dots i.active {
+  background: var(--c-111111);
+}
+
+.tour-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.tour-actions span {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.fix-it-button {
+  margin-top: 6px;
+}
+
+.fix-status {
+  border: 1px solid var(--c-bfcdbd);
+  border-radius: 8px;
+  background: var(--c-edf5eb);
+  padding: 8px 10px;
+}
+
+.port-known-label {
+  font-style: normal;
+  font-weight: 400;
+  font-size: 0.72rem;
+  color: var(--c-8b8b84);
+}

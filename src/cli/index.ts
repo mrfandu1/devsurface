@@ -32,6 +32,16 @@ import { systemCommand } from './commands/system.js';
 import { quickstartCommand } from './commands/quickstart.js';
 import { whyCommand } from './commands/why.js';
 import { searchCommand } from './commands/search.js';
+import { notesCommand } from './commands/notes.js';
+import { todosCommand } from './commands/todos.js';
+import { statsCommand } from './commands/stats.js';
+import { depsCommand } from './commands/deps.js';
+import { commitsCommand } from './commands/commits.js';
+import { cleanCommand } from './commands/clean.js';
+import { snapshotCommand } from './commands/snapshot.js';
+import { bundleCommand } from './commands/bundle.js';
+import { watchCommand } from './commands/watch.js';
+import { completionsCommand } from './commands/completions.js';
 import { printUpdateNotice } from './updateCheck.js';
 import { DEV_SURFACE_VERSION } from '../version.js';
 
@@ -172,16 +182,17 @@ program
   .alias('checkup')
   .description('Check the project for setup problems and explain each one.')
   .option('--json', 'print warnings as JSON')
+  .option('--fix', 'apply every safe automatic fix, then re-check')
   .option(
     '--fail-on <severity>',
     'exit nonzero when warnings at or above this severity exist (error|warning|info|never)',
     'never'
   )
-  .action((options: { json?: boolean; failOn: string }) => {
+  .action((options: { json?: boolean; failOn: string; fix?: boolean }) => {
     const failOn = ['error', 'warning', 'info', 'never'].includes(options.failOn)
       ? (options.failOn as 'error' | 'warning' | 'info' | 'never')
       : 'never';
-    handle(doctorCommand(process.cwd(), { json: options.json, failOn }), {
+    handle(doctorCommand(process.cwd(), { json: options.json, failOn, fix: options.fix }), {
       updateNotice: options.json !== true
     });
   });
@@ -307,6 +318,106 @@ program
   )
   .action((query: string) => {
     handle(searchCommand(query, process.cwd()));
+  });
+
+program
+  .command('notes')
+  .argument('[action]', 'add | done | remove | clear-done (omit to list)')
+  .argument('[args...]', 'note text, or the note number')
+  .description('Keep personal notes and checklists for this project (stored outside the repo).')
+  .option('--check', 'with "add": save the note as a checklist item')
+  .option('--json', 'print notes as JSON')
+  .action(
+    (action: string | undefined, args: string[], options: { check?: boolean; json?: boolean }) => {
+      handle(notesCommand(action, args, options), { updateNotice: options.json !== true });
+    }
+  );
+
+program
+  .command('todos')
+  .alias('todo')
+  .description('List every TODO, FIXME, and HACK comment left in the code.')
+  .option('--json', 'print the report as JSON')
+  .action((options: { json?: boolean }) => {
+    handle(todosCommand(process.cwd(), { json: options.json }), {
+      updateNotice: options.json !== true
+    });
+  });
+
+program
+  .command('stats')
+  .description('Show code statistics: lines by language, file counts, largest files.')
+  .option('--json', 'print statistics as JSON')
+  .action((options: { json?: boolean }) => {
+    handle(statsCommand(process.cwd(), { json: options.json }), {
+      updateNotice: options.json !== true
+    });
+  });
+
+program
+  .command('deps')
+  .alias('dependencies')
+  .description('Explain every installed dependency in one line, with a license rollup.')
+  .option('--licenses', 'show the license report instead of the package list')
+  .option('--json', 'print the report as JSON')
+  .action((options: { json?: boolean; licenses?: boolean }) => {
+    handle(depsCommand(process.cwd(), options), { updateNotice: options.json !== true });
+  });
+
+program
+  .command('commits')
+  .alias('log')
+  .description('Show recent commits, contributors, and uncommitted changes, human-first.')
+  .option('-n, --limit <count>', 'number of commits to show', (value) => Number(value), 15)
+  .option('--json', 'print insights as JSON')
+  .action((options: { json?: boolean; limit: number }) => {
+    handle(commitsCommand(process.cwd(), options), { updateNotice: options.json !== true });
+  });
+
+program
+  .command('clean')
+  .description('Show how much space regenerable folders take; delete only on request.')
+  .option('--delete <name>', 'delete one folder from the safe-to-delete list')
+  .option('--yes', 'skip the confirmation prompt')
+  .option('--json', 'print the report as JSON')
+  .action((options: { json?: boolean; delete?: string; yes?: boolean }) => {
+    handle(cleanCommand(process.cwd(), options), { updateNotice: options.json !== true });
+  });
+
+program
+  .command('snapshot')
+  .argument('[action]', 'save | diff | list | clear (default: save)')
+  .argument('[label...]', 'optional label for a saved snapshot')
+  .description('Freeze what the project looks like now; "diff" tells you what changed since.')
+  .option('--json', 'print snapshots or the diff as JSON')
+  .action((action: string | undefined, label: string[], options: { json?: boolean }) => {
+    handle(snapshotCommand(action, label, options), { updateNotice: options.json !== true });
+  });
+
+program
+  .command('bundle')
+  .alias('help-bundle')
+  .description(
+    'Write a shareable Markdown help bundle: summary, health, machine info, recent runs.'
+  )
+  .option('-o, --out <file>', 'output file path ("-" for stdout)', 'devsurface-help.md')
+  .action((options: { out: string }) => {
+    handle(bundleCommand(process.cwd(), options), { updateNotice: options.out !== '-' });
+  });
+
+program
+  .command('watch')
+  .description('Live terminal status view: ports, services, and health, refreshed every 5s.')
+  .action(() => {
+    handle(watchCommand(process.cwd()), { updateNotice: false });
+  });
+
+program
+  .command('completions')
+  .argument('<shell>', 'bash | zsh | powershell')
+  .description('Print a tab-completion script for your shell.')
+  .action((shell: string) => {
+    handle(completionsCommand(shell), { updateNotice: false });
   });
 
 program

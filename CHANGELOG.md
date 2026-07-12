@@ -1,5 +1,148 @@
 # Changelog
 
+## 1.1.0
+
+**100 new features**, organized into eleven new systems. Everything remains
+fully local — no network calls, no AI, no telemetry — and personal data
+(notes, snapshots) is stored outside the repository so it can never be
+committed by accident.
+
+### Project notes & checklists
+
+1. Personal per-project notes, stored on your machine outside the repo — they never end up in git
+2. Checklist notes you can check off as you go
+3. Pinned notes that stay at the top
+4. A Notes page in the dashboard: add, check off, pin, and delete inline
+5. Checklist progress counter ("3 of 5 done")
+6. `devsurface notes` command with a numbered list
+7. `devsurface notes add "<text>"` (with `--check` for checklist items)
+8. `devsurface notes done / remove <number>` and `clear-done`
+9. Notes REST API on both the hub and single-project servers
+
+### TODO scanner
+
+10. A TODO/FIXME/HACK/BUG/XXX/NOTE comment scanner covering 30+ file types and comment syntaxes
+11. Urgency ordering: FIXME and BUG surface before TODO and NOTE
+12. "To-dos in code" dashboard tab with severity-colored badges and file:line references
+13. Per-marker count summary (how many FIXMEs vs TODOs)
+14. `devsurface todos` command, grouped by file with line numbers
+15. Bounded scanning (depth/file/size caps) so it finishes fast on any repo
+16. `/todos` API endpoint
+
+### Code statistics
+
+17. Lines-of-code counting by language, for 30+ languages
+18. Largest-files ranking (where the complexity lives)
+19. Whole-project totals: files, lines, size on disk
+20. "Code size" dashboard tab with proportional language bars
+21. `devsurface stats` command with a terminal bar chart
+22. Shared human-readable size formatting (2 KB, 5.3 MB) across CLI and dashboard
+23. `/stats` API endpoint
+
+### Dependency explorer
+
+24. Installed-version detection read straight from node_modules — no registry calls
+25. A one-line plain-English description for every package, from its own metadata
+26. Per-package license detection
+27. Whole-project license rollup report
+28. Homepage links for every package that declares one
+29. Declared-but-not-installed detection ("run the install command")
+30. Dependencies dashboard tab with a live filter box
+31. `devsurface deps` command (and `deps --licenses` for the license report)
+32. `/deps` API endpoint
+
+### Git insights
+
+33. Recent-commits view with relative dates ("yesterday", "3 days ago")
+34. Contributors leaderboard ("who works on this")
+35. Branch list with the current branch marked
+36. Uncommitted changes translated into plain words ("modified", "new file (untracked)")
+37. "History" dashboard tab combining all of the above
+38. `devsurface commits` command (alias: `log`)
+39. Time-boxed, parallel, read-only git queries — history is never modified
+40. `/git/insights` API endpoint
+
+### In-dashboard documentation viewer
+
+41. Markdown doc discovery: README first, then root docs and docs/ folders
+42. "Docs" dashboard tab that opens any project document without leaving the dashboard
+43. A purpose-built safe Markdown renderer — every character escaped first, so docs can never inject scripts
+44. http(s)-and-anchor-only link policy in rendered documents
+45. Path-confined, size-capped document reading (nothing outside the repo is readable)
+46. `/docs` and `/docs/read` API endpoints
+
+### Disk cleanup advisor
+
+47. Space report for 15 kinds of regenerable folders (node_modules, dist, .next, coverage, caches…)
+48. A "how it comes back" explanation for every folder, so deleting never feels scary
+49. Guarded deletion: allowlist-only, path-confined, symlink-refusing — source folders are untouchable
+50. Toolbox cleanup card with a two-step "Delete… / Yes, delete" confirmation
+51. Total-reclaimable-space summary
+52. `devsurface clean` (report) and `clean --delete <name>` with a confirmation prompt (`--yes` to skip)
+53. `/cleanup` and `/cleanup/delete` API endpoints
+
+### Snapshots: "what changed since?"
+
+54. Project snapshots capturing scripts, env key names (never values), dependency versions, ports, health, and readiness
+55. Plain-English diffing: "New script: test", "dependency express changed (^4 → ^5)", "readiness went from 50% to 80% (better)"
+56. Snapshot storage outside the repo, capped at 20 per project
+57. Toolbox snapshot card: take a snapshot and ask "what changed?" in one click each
+58. `devsurface snapshot save` with an optional label
+59. `devsurface snapshot diff` against the newest snapshot
+60. `devsurface snapshot list` and `snapshot clear`
+61. `/snapshots` and `/snapshots/diff` API endpoints
+
+### One-click fixes for doctor warnings
+
+62. A fix engine that is append-only/create-only, idempotent, and reports what it did in plain English
+63. Fix: add `.env` to .gitignore
+64. Fix: add `node_modules/` to .gitignore
+65. Fix: create a standard `.dockerignore`
+66. Fix: create `.env` from the example file
+67. Fix: create `.env.example` from your local keys — values are never copied
+68. Fix: create a starter README skeleton with install/run sections
+69. "🔧 Fix it" buttons directly on Repo Health warnings in the dashboard
+70. `devsurface doctor --fix`: apply every safe fix, then re-run the checkup
+71. "fixable automatically" hints in normal doctor output
+72. `/fixes` and `/fixes/apply` API endpoints
+
+### The help bundle
+
+73. A one-file Markdown help bundle: plain-English summary, fact table, machine readiness, health warnings, recent runs, and the last error lines
+74. Guaranteed secret-free (env keys by name only) with an explicit note saying so
+75. ANSI-stripped, length-capped log tail that prefers error lines
+76. A "helper checklist" footer telling the recipient where to look first
+77. "Download the help bundle" button in the Toolbox
+78. `devsurface bundle` command (writes a file, or `-o -` for stdout)
+79. `/bundle.md` API endpoint with a download mode
+
+### Dashboard experience
+
+80. **Beginner mode**: one switch reduces the sidebar to the essentials — Overview, Onboarding, Learn, Notes, Toolbox
+81. **First-run welcome tour**: seven short cards introducing the dashboard, shown once, skippable anytime
+82. Replay the tour from Settings or the command palette
+83. New Insights view (five tabs) in the sidebar and command palette
+84. New Notes view in the sidebar and command palette
+85. New Toolbox view in the sidebar and command palette
+86. Three new sidebar icons (note, chart, wrench)
+87. Well-known port names in the Ports view ("5432 — PostgreSQL database", 36 ports known)
+88. Fix-confirmation banner on the Health page after applying a fix
+89. Lazy tab loading in Insights — each tab fetches only when opened
+90. Reusable two-step delete confirmation pattern for destructive dashboard actions
+91. Document viewer with back navigation and per-document titles
+
+### CLI experience
+
+92. `devsurface watch`: a live, self-refreshing terminal status view (ports, Docker services, health) every 5 seconds
+93. `watch` degrades to a single status frame when output is not a real terminal (CI-safe)
+94. Shell tab completions for bash (`devsurface completions bash`)
+95. Shell tab completions for zsh
+96. Shell tab completions for PowerShell
+97. Friendly command aliases: `todo`, `log`, `dependencies`, `help-bundle`
+98. `--json` output on every new read command (notes, todos, stats, deps, commits, clean, snapshot)
+99. Well-known port names in `devsurface watch` output
+100.  Confirmation-first destructive actions across every new surface — nothing is ever deleted without asking
+
 ## 1.0.1
 
 The "plain English" release: 200+ new and enhanced features aimed squarely at

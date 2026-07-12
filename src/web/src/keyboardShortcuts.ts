@@ -8,6 +8,9 @@ export type DashboardShortcutView =
   | 'health'
   | 'logs'
   | 'learn'
+  | 'notes'
+  | 'insights'
+  | 'toolbox'
   | 'settings';
 
 export type DashboardShortcutAction =

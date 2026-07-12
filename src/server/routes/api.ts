@@ -34,6 +34,7 @@ import { scanProject } from '../../core/scanner/index.js';
 import type { Hub } from '../../core/hub/runtime.js';
 import { DEV_SURFACE_VERSION } from '../../version.js';
 import { isAllowedLocalOrigin, isSameOrigin } from '../localAccess.js';
+import { registerToolRoutes } from './tools.js';
 import { createApiAccessMiddleware } from '../accessControl.js';
 import { hasValidMutationToken } from '../mutationToken.js';
 import { isAllowedTerminalCommand } from '../terminal.js';
@@ -688,12 +689,22 @@ function registerWorkspaceRoutes(
   });
 
   app.delete('/api/workspaces/:id/run/:pid', async (context) => {
-    const ws = await resolveWorkspace(context.req.param('id'));
+    const ws = await resolveWorkspace(context.req.param('id') ?? '');
     if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
     const pid = decodeURIComponent(context.req.param('pid'));
     const stopped = ws.processManager.stop(pid);
     return context.json({ stopped });
   });
+
+  registerToolRoutes(
+    app,
+    '/api/workspaces/:id',
+    async (context) => {
+      const ws = await resolveWorkspace(context.req.param('id') ?? '');
+      return ws === null ? null : { root: ws.root, processManager: ws.processManager };
+    },
+    history
+  );
 }
 
 export function registerHubApiRoutes(
@@ -1059,4 +1070,9 @@ export function registerApiRoutes(
     const stopped = options.processManager.stop(pid);
     return context.json({ stopped });
   });
+
+  registerToolRoutes(app, '/api', async () => ({
+    root: options.projectRoot,
+    processManager: options.processManager
+  }));
 }

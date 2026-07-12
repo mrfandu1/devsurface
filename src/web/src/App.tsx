@@ -16,6 +16,12 @@ import { useSocket } from './hooks/useSocket';
 import { useWorkspace } from './hooks/useWorkspace';
 import { CommandPalette, type PaletteItem } from './components/CommandPalette';
 import { LearnPanel } from './components/LearnPanel';
+import { NotesPanel } from './components/NotesPanel';
+import { InsightsPanel } from './components/InsightsPanel';
+import { ToolboxPanel } from './components/ToolboxPanel';
+import { TourOverlay, isTourDone } from './components/TourOverlay';
+import { FixItButton, useAvailableFixes } from './components/FixItButton';
+import { portLabel } from '@core/ports/knowledge.js';
 import { getDashboardShortcut, type DashboardShortcutView } from './keyboardShortcuts';
 import { mutationHeaders, apiPrefix } from './mutation';
 import { orderWithPins, readPinnedScripts, togglePinnedScript } from './pins';
@@ -214,6 +220,7 @@ interface DashboardSettings {
   notifyOnFailure: boolean;
   fontScale: FontScale;
   highContrast: boolean;
+  beginnerMode: boolean;
 }
 
 const DEFAULT_DASHBOARD_SETTINGS: DashboardSettings = {
@@ -223,7 +230,8 @@ const DEFAULT_DASHBOARD_SETTINGS: DashboardSettings = {
   confirmBeforeRun: true,
   notifyOnFailure: false,
   fontScale: 'comfortable',
-  highContrast: false
+  highContrast: false,
+  beginnerMode: false
 };
 
 const SETTINGS_STORAGE_KEY = 'devsurface-settings';
@@ -506,9 +514,31 @@ function Icon({ name }: { name: string }) {
           <path d="M9 7h7" />
         </>
       ) : null}
+      {name === 'note' ? (
+        <>
+          <path d="M5 4h14v13l-4 4H5z" />
+          <path d="M15 21v-4h4" />
+          <path d="M8 9h8" />
+          <path d="M8 13h5" />
+        </>
+      ) : null}
+      {name === 'chart' ? (
+        <>
+          <path d="M4 4v16h16" />
+          <path d="M8 16v-5" />
+          <path d="M12 16V8" />
+          <path d="M16 16v-8" />
+        </>
+      ) : null}
+      {name === 'wrench' ? (
+        <path d="M14.5 6.5a4 4 0 0 1 5-5l-3 3 .7 2.3 2.3.7 3-3a4 4 0 0 1-5 5L8 19a2.1 2.1 0 0 1-3-3z" />
+      ) : null}
     </svg>
   );
 }
+
+/** The reduced set of sections Beginner mode shows. */
+const BEGINNER_VIEWS = new Set<ActiveView>(['overview', 'onboarding', 'learn', 'notes', 'toolbox']);
 
 function Sidebar({
   version,
@@ -517,6 +547,7 @@ function Sidebar({
   warningCount,
   onboardingTodo,
   busyPortCount,
+  beginnerMode,
   onSelectView,
   onToggleCollapsed
 }: {
@@ -526,10 +557,11 @@ function Sidebar({
   warningCount: number;
   onboardingTodo: number;
   busyPortCount: number;
+  beginnerMode: boolean;
   onSelectView: (view: ActiveView) => void;
   onToggleCollapsed: () => void;
 }) {
-  const items = [
+  const allItems = [
     { icon: 'home', label: 'Overview', view: 'overview' },
     { icon: 'check', label: 'Onboarding', view: 'onboarding' },
     { icon: 'script', label: 'Scripts', view: 'scripts' },
@@ -538,8 +570,12 @@ function Sidebar({
     { icon: 'box', label: 'Services', view: 'services' },
     { icon: 'heart', label: 'Repo Health', view: 'health' },
     { icon: 'doc', label: 'Logs', view: 'logs' },
-    { icon: 'book', label: 'Learn', view: 'learn' }
+    { icon: 'book', label: 'Learn', view: 'learn' },
+    { icon: 'note', label: 'Notes', view: 'notes' },
+    { icon: 'chart', label: 'Insights', view: 'insights' },
+    { icon: 'wrench', label: 'Toolbox', view: 'toolbox' }
   ] satisfies Array<{ icon: string; label: string; view: ActiveView }>;
+  const items = beginnerMode ? allItems.filter((item) => BEGINNER_VIEWS.has(item.view)) : allItems;
 
   return (
     <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
@@ -1681,10 +1717,12 @@ function ThemeSettingRow({
 
 function DashboardSettingsFields({
   settings,
-  onSettingsChange
+  onSettingsChange,
+  onShowTour
 }: {
   settings: DashboardSettings;
   onSettingsChange: (settings: DashboardSettings) => void;
+  onShowTour?: () => void;
 }) {
   return (
     <>
@@ -1789,6 +1827,30 @@ function DashboardSettingsFields({
           type="checkbox"
         />
       </label>
+      <label className="setting-row">
+        <span>
+          <strong>Beginner mode</strong>
+          <em>Show only the essentials: Overview, Onboarding, Learn, Notes, and Toolbox.</em>
+        </span>
+        <input
+          checked={settings.beginnerMode}
+          onChange={(event) =>
+            onSettingsChange({ ...settings, beginnerMode: event.target.checked })
+          }
+          type="checkbox"
+        />
+      </label>
+      {onShowTour !== undefined ? (
+        <div className="setting-row">
+          <span>
+            <strong>Welcome tour</strong>
+            <em>Replay the one-minute introduction to the dashboard.</em>
+          </span>
+          <button className="minor-button" onClick={onShowTour} type="button">
+            Show the tour
+          </button>
+        </div>
+      ) : null}
       <div className="setting-row">
         <span>
           <strong>Reset dashboard settings</strong>
@@ -2802,7 +2864,8 @@ function SectionPage({
   history,
   themePreference,
   onThemeChange,
-  workspaceId
+  workspaceId,
+  onShowTour
 }: {
   view: Exclude<ActiveView, 'overview' | 'onboarding'>;
   project: ScanResult;
@@ -2832,9 +2895,12 @@ function SectionPage({
   themePreference: ThemePreference;
   onThemeChange: (preference: ThemePreference) => void;
   workspaceId: string | null;
+  onShowTour?: () => void;
 }) {
   const [commonPorts, setCommonPorts] = useState<ScanResult['ports'] | null>(null);
   const [scanningCommon, setScanningCommon] = useState(false);
+  const [fixStatus, setFixStatus] = useState<string | null>(null);
+  const availableFixes = useAvailableFixes(workspaceId, view === 'health', lastRefreshed);
 
   async function scanCommonPorts(): Promise<void> {
     setScanningCommon(true);
@@ -2882,6 +2948,9 @@ function SectionPage({
     health: 'Repo Health',
     logs: 'Logs',
     learn: 'Learn',
+    notes: 'Notes',
+    insights: 'Insights',
+    toolbox: 'Toolbox',
     settings: 'Settings'
   };
 
@@ -3114,7 +3183,12 @@ function SectionPage({
               <div className="drawer-table port-action-table">
                 {project.ports.map((port) => (
                   <div className="drawer-row" key={port.port}>
-                    <strong>{port.port}</strong>
+                    <strong>
+                      {port.port}
+                      {portLabel(port.port) !== null ? (
+                        <em className="port-known-label"> {portLabel(port.port)}</em>
+                      ) : null}
+                    </strong>
                     <code>http://localhost:{port.port}</code>
                     <span className={port.inUse ? 'text-bad' : 'text-ok'}>
                       {port.inUse ? describeBusyPort(port) : 'available'}
@@ -3228,6 +3302,7 @@ function SectionPage({
       {view === 'health' ? (
         <div className="section-grid single">
           <DrawerSection title="Doctor Check">
+            {fixStatus !== null ? <p className="drawer-note fix-status">{fixStatus}</p> : null}
             {warnings.length > 0 ? (
               <div className="health-toolbar">
                 <div className="health-filter-chips" role="group" aria-label="Filter by severity">
@@ -3277,6 +3352,16 @@ function SectionPage({
                   <article className={`drawer-warning ${warning.severity}`} key={warning.id}>
                     <strong>{warning.title}</strong>
                     <p>{warning.message}</p>
+                    {availableFixes[warning.id] !== undefined ? (
+                      <FixItButton
+                        fix={availableFixes[warning.id]}
+                        workspaceId={workspaceId}
+                        onApplied={(message) => {
+                          setFixStatus(message);
+                          void onRefresh();
+                        }}
+                      />
+                    ) : null}
                   </article>
                 ))}
               </div>
@@ -3297,11 +3382,21 @@ function SectionPage({
 
       {view === 'learn' ? <LearnPanel workspaceId={workspaceId} /> : null}
 
+      {view === 'notes' ? <NotesPanel workspaceId={workspaceId} /> : null}
+
+      {view === 'insights' ? <InsightsPanel workspaceId={workspaceId} /> : null}
+
+      {view === 'toolbox' ? <ToolboxPanel workspaceId={workspaceId} /> : null}
+
       {view === 'settings' ? (
         <div className="section-grid">
           <DrawerSection title="Dashboard">
             <ThemeSettingRow themePreference={themePreference} onThemeChange={onThemeChange} />
-            <DashboardSettingsFields settings={settings} onSettingsChange={onSettingsChange} />
+            <DashboardSettingsFields
+              settings={settings}
+              onSettingsChange={onSettingsChange}
+              onShowTour={onShowTour}
+            />
           </DrawerSection>
           <DrawerSection title="Workspace">
             <CommandBlock command={`Set-Location '${project.root}'`} />
@@ -3494,6 +3589,7 @@ export default function App() {
   const [dockerError, setDockerError] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [tourOpen, setTourOpen] = useState(() => !isTourDone());
   const [pinned, setPinned] = useState<string[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const [logsPrefill, setLogsPrefill] = useState('');
@@ -4164,6 +4260,9 @@ export default function App() {
         ['health', 'Repo Health'],
         ['logs', 'Logs'],
         ['learn', 'Learn'],
+        ['notes', 'Notes'],
+        ['insights', 'Insights'],
+        ['toolbox', 'Toolbox'],
         ['settings', 'Settings']
       ] as Array<[ActiveView, string]>
     ).map(([view, label]) => ({
@@ -4182,6 +4281,13 @@ export default function App() {
       group: 'Actions',
       keywords: 'rescan reload',
       action: () => void refreshProject()
+    },
+    {
+      id: 'action-tour',
+      label: 'Show the welcome tour',
+      group: 'Actions',
+      keywords: 'help intro guide onboarding welcome tutorial',
+      action: () => setTourOpen(true)
     },
     {
       id: 'action-terminal',
@@ -4339,6 +4445,7 @@ export default function App() {
     >
       <Sidebar
         activeView={activeView}
+        beginnerMode={settings.beginnerMode}
         collapsed={sidebarCollapsed}
         warningCount={projectState.health.filter((warning) => warning.severity !== 'info').length}
         onboardingTodo={
@@ -4489,6 +4596,7 @@ export default function App() {
               themePreference={themePreference}
               onThemeChange={setThemePreference}
               workspaceId={workspaceState.activeId}
+              onShowTour={() => setTourOpen(true)}
             />
           )}
         </div>
@@ -4536,6 +4644,7 @@ export default function App() {
         />
       ) : null}
       {shortcutsOpen ? <ShortcutsHelp onClose={() => setShortcutsOpen(false)} /> : null}
+      {tourOpen ? <TourOverlay onClose={() => setTourOpen(false)} /> : null}
       {toasts.length > 0 ? (
         <div className="toast-stack" role="status" aria-live="polite">
           {toasts.map((toast) => (
