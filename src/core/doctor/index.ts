@@ -917,5 +917,114 @@ export async function runDoctor(root = process.cwd(), scan?: ScanResult): Promis
     }
   }
 
+  // A Dockerfile without .dockerignore ships node_modules and .git into every build.
+  if (
+    (await pathExists(path.join(root, 'Dockerfile'))) &&
+    !(await pathExists(path.join(root, '.dockerignore')))
+  ) {
+    warnings.push(
+      warning(
+        'missing-dockerignore',
+        'warning',
+        'Dockerfile without .dockerignore',
+        'Docker builds copy everything — including node_modules, .git, and .env — unless .dockerignore excludes them. Add one to keep images small and secrets out.'
+      )
+    );
+  }
+
+  // A hardcoded npm auth token in a committed .npmrc is a leaked credential.
+  {
+    const npmrc = await readIfPresent(path.join(root, '.npmrc'));
+    if (npmrc !== null && /_authToken\s*=\s*(?!\$\{)[^\s]+/.test(npmrc)) {
+      warnings.push(
+        warning(
+          'npmrc-auth-token',
+          'error',
+          '.npmrc contains a hardcoded auth token',
+          'The .npmrc file embeds a registry token directly instead of referencing an environment variable like ${NPM_TOKEN}. If this file is committed, rotate the token and switch to the env-var form.',
+          path.join(root, '.npmrc')
+        )
+      );
+    }
+  }
+
+  // Scripts that escalate to sudo surprise newcomers and break on Windows.
+  {
+    const sudoScripts = Object.entries(result.scripts)
+      .filter(([, command]) => /\bsudo\s/.test(command))
+      .map(([name]) => name);
+    if (sudoScripts.length > 0) {
+      warnings.push(
+        warning(
+          'sudo-in-scripts',
+          'warning',
+          'Scripts use sudo',
+          `${sudoScripts.join(', ')} run${sudoScripts.length === 1 ? 's' : ''} with sudo. Scripts should not need administrator rights; this also fails outright on Windows.`
+        )
+      );
+    }
+  }
+
+  // Missing engines.node leaves every contributor guessing which Node works.
+  if (
+    isNodeProject &&
+    result.packageJson !== null &&
+    result.packageJson.data.engines?.node === undefined &&
+    result.nodeRequirement === null
+  ) {
+    warnings.push(
+      warning(
+        'no-node-requirement',
+        'info',
+        'No Node version requirement declared',
+        'Neither engines.node, .nvmrc, nor .node-version says which Node this project needs. Declaring one saves contributors from version-mismatch bugs.'
+      )
+    );
+  }
+
+  // http:// URLs in .env.example normalize insecure defaults.
+  if (result.env?.hasExample && result.env.examplePath !== null) {
+    const exampleContent = await readIfPresent(result.env.examplePath);
+    if (
+      exampleContent !== null &&
+      /=\s*["']?http:\/\/(?!localhost|127\.0\.0\.1|0\.0\.0\.0|host\.docker\.internal)/i.test(
+        exampleContent
+      )
+    ) {
+      warnings.push(
+        warning(
+          'insecure-env-example-url',
+          'info',
+          '.env.example defaults to an insecure URL',
+          'An example value points at a plain http:// address that is not localhost. If the real service supports HTTPS, make the example https:// so nobody copies the insecure form.',
+          result.env.examplePath
+        )
+      );
+    }
+  }
+
+  // Deeply nested lockfiles (a lockfile inside src/) usually mean a stray install.
+  {
+    const strayLockDirs = ['src', 'app', 'lib'];
+    const strays: string[] = [];
+    for (const dir of strayLockDirs) {
+      for (const lockfile of ['package-lock.json', 'yarn.lock', 'pnpm-lock.yaml']) {
+        if (await pathExists(path.join(root, dir, lockfile))) {
+          strays.push(`${dir}/${lockfile}`);
+        }
+      }
+    }
+    if (strays.length > 0) {
+      warnings.push(
+        warning(
+          'stray-lockfile',
+          'warning',
+          'Lockfile found inside a source folder',
+          `Found ${strays.join(', ')} — usually the result of running an install in the wrong folder. Delete ${strays.length === 1 ? 'it' : 'them'}; only the repo root should hold a lockfile.`
+        )
+      );
+    }
+  }
+
   return warnings;
 }

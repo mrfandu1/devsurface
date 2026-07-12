@@ -15,6 +15,7 @@ import { useProject } from './hooks/useProject';
 import { useSocket } from './hooks/useSocket';
 import { useWorkspace } from './hooks/useWorkspace';
 import { CommandPalette, type PaletteItem } from './components/CommandPalette';
+import { LearnPanel } from './components/LearnPanel';
 import { getDashboardShortcut, type DashboardShortcutView } from './keyboardShortcuts';
 import { mutationHeaders, apiPrefix } from './mutation';
 import { orderWithPins, readPinnedScripts, togglePinnedScript } from './pins';
@@ -203,12 +204,16 @@ type DrawerKind =
   | 'install'
   | null;
 
+type FontScale = 'comfortable' | 'large' | 'x-large';
+
 interface DashboardSettings {
   autoRefreshEnabled: boolean;
   autoRefreshSeconds: number;
   autoOpenAppUrl: boolean;
   confirmBeforeRun: boolean;
   notifyOnFailure: boolean;
+  fontScale: FontScale;
+  highContrast: boolean;
 }
 
 const DEFAULT_DASHBOARD_SETTINGS: DashboardSettings = {
@@ -216,7 +221,9 @@ const DEFAULT_DASHBOARD_SETTINGS: DashboardSettings = {
   autoRefreshSeconds: 30,
   autoOpenAppUrl: true,
   confirmBeforeRun: true,
-  notifyOnFailure: false
+  notifyOnFailure: false,
+  fontScale: 'comfortable',
+  highContrast: false
 };
 
 const SETTINGS_STORAGE_KEY = 'devsurface-settings';
@@ -492,6 +499,13 @@ function Icon({ name }: { name: string }) {
           <path d="M19 14v5H5V5h5" />
         </>
       ) : null}
+      {name === 'book' ? (
+        <>
+          <path d="M4 5a2 2 0 0 1 2-2h14v18H6a2 2 0 0 1-2-2z" />
+          <path d="M4 19a2 2 0 0 1 2-2h14" />
+          <path d="M9 7h7" />
+        </>
+      ) : null}
     </svg>
   );
 }
@@ -523,7 +537,8 @@ function Sidebar({
     { icon: 'ports', label: 'Ports', view: 'ports' },
     { icon: 'box', label: 'Services', view: 'services' },
     { icon: 'heart', label: 'Repo Health', view: 'health' },
-    { icon: 'doc', label: 'Logs', view: 'logs' }
+    { icon: 'doc', label: 'Logs', view: 'logs' },
+    { icon: 'book', label: 'Learn', view: 'learn' }
   ] satisfies Array<{ icon: string; label: string; view: ActiveView }>;
 
   return (
@@ -1745,6 +1760,35 @@ function DashboardSettingsFields({
           type="checkbox"
         />
       </label>
+      <label className="setting-row">
+        <span>
+          <strong>Text size</strong>
+          <em>Make everything in the dashboard easier to read.</em>
+        </span>
+        <select
+          value={settings.fontScale}
+          onChange={(event) =>
+            onSettingsChange({ ...settings, fontScale: event.target.value as FontScale })
+          }
+        >
+          <option value="comfortable">Comfortable</option>
+          <option value="large">Large</option>
+          <option value="x-large">Extra large</option>
+        </select>
+      </label>
+      <label className="setting-row">
+        <span>
+          <strong>High contrast</strong>
+          <em>Stronger colors and borders for readability.</em>
+        </span>
+        <input
+          checked={settings.highContrast}
+          onChange={(event) =>
+            onSettingsChange({ ...settings, highContrast: event.target.checked })
+          }
+          type="checkbox"
+        />
+      </label>
       <div className="setting-row">
         <span>
           <strong>Reset dashboard settings</strong>
@@ -1765,7 +1809,10 @@ function DashboardSettingsFields({
 const SHORTCUTS_HELP: Array<[string, string]> = [
   ['Ctrl/Cmd + K', 'Open the command palette'],
   ['Ctrl/Cmd + B', 'Collapse or expand the sidebar'],
-  ['1 – 8', 'Jump to Overview, Onboarding, Scripts, Environment, Ports, Services, Health, Logs'],
+  [
+    '1 – 9',
+    'Jump to Overview, Onboarding, Scripts, Environment, Ports, Services, Health, Logs, Learn'
+  ],
   [',', 'Open Settings'],
   ['F5', 'Refresh project data'],
   ['Esc', 'Close panels and overlays'],
@@ -2754,7 +2801,8 @@ function SectionPage({
   logsPrefill,
   history,
   themePreference,
-  onThemeChange
+  onThemeChange,
+  workspaceId
 }: {
   view: Exclude<ActiveView, 'overview' | 'onboarding'>;
   project: ScanResult;
@@ -2783,6 +2831,7 @@ function SectionPage({
   history: RunHistoryEntry[];
   themePreference: ThemePreference;
   onThemeChange: (preference: ThemePreference) => void;
+  workspaceId: string | null;
 }) {
   const [commonPorts, setCommonPorts] = useState<ScanResult['ports'] | null>(null);
   const [scanningCommon, setScanningCommon] = useState(false);
@@ -2832,6 +2881,7 @@ function SectionPage({
     services: 'Services',
     health: 'Repo Health',
     logs: 'Logs',
+    learn: 'Learn',
     settings: 'Settings'
   };
 
@@ -3244,6 +3294,8 @@ function SectionPage({
           initialFilter={logsPrefill}
         />
       ) : null}
+
+      {view === 'learn' ? <LearnPanel workspaceId={workspaceId} /> : null}
 
       {view === 'settings' ? (
         <div className="section-grid">
@@ -4111,6 +4163,7 @@ export default function App() {
         ['services', 'Services'],
         ['health', 'Repo Health'],
         ['logs', 'Logs'],
+        ['learn', 'Learn'],
         ['settings', 'Settings']
       ] as Array<[ActiveView, string]>
     ).map(([view, label]) => ({
@@ -4281,7 +4334,9 @@ export default function App() {
   ];
 
   return (
-    <main className="app-shell">
+    <main
+      className={`app-shell font-scale-${settings.fontScale}${settings.highContrast ? ' high-contrast' : ''}`}
+    >
       <Sidebar
         activeView={activeView}
         collapsed={sidebarCollapsed}
@@ -4433,6 +4488,7 @@ export default function App() {
               history={projectState.history}
               themePreference={themePreference}
               onThemeChange={setThemePreference}
+              workspaceId={workspaceState.activeId}
             />
           )}
         </div>

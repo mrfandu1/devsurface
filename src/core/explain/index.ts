@@ -118,6 +118,82 @@ const NAME_INTENTS: NameIntent[] = [
   {
     keys: ['postinstall'],
     explanation: 'Runs automatically right after dependencies are installed.'
+  },
+  {
+    keys: ['preview:prod', 'stage', 'staging'],
+    explanation: 'Runs the app the way it will run in the staging/pre-release environment.'
+  },
+  {
+    keys: ['validate'],
+    explanation: 'Runs the project’s full set of quality checks in one go.'
+  },
+  {
+    keys: ['audit'],
+    explanation: 'Checks installed packages for known security problems.'
+  },
+  {
+    keys: ['update', 'upgrade', 'bump'],
+    explanation: 'Updates the project’s packages to newer versions.'
+  },
+  {
+    keys: ['translate', 'i18n', 'intl', 'locales'],
+    explanation: 'Works with the app’s translations (extracting or compiling language files).'
+  },
+  {
+    keys: ['email', 'emails'],
+    explanation: 'Builds or previews the app’s email templates.'
+  },
+  {
+    keys: ['proxy'],
+    explanation: 'Starts a local relay that forwards requests to another server.'
+  },
+  {
+    keys: ['tunnel'],
+    explanation: 'Opens a temporary public URL that forwards to your local app.'
+  },
+  {
+    keys: ['mock', 'mocks', 'fixtures'],
+    explanation: 'Starts or generates fake data/services so you can develop without the real ones.'
+  },
+  {
+    keys: ['profile', 'profiling'],
+    explanation: 'Runs the app while measuring where it spends its time.'
+  },
+  {
+    keys: ['sitemap'],
+    explanation: 'Generates the sitemap file search engines use to index the site.'
+  },
+  {
+    keys: ['icons', 'sprites', 'assets', 'images'],
+    explanation: 'Prepares images, icons, or other static assets the app uses.'
+  },
+  {
+    keys: ['sync'],
+    explanation: 'Synchronizes generated files or data with their source of truth.'
+  },
+  {
+    keys: ['knip', 'unused', 'deadcode'],
+    explanation: 'Finds unused files, exports, and dependencies that can be deleted.'
+  },
+  {
+    keys: ['size'],
+    explanation: 'Checks how large the built app is.'
+  },
+  {
+    keys: ['changelog'],
+    explanation: 'Generates or updates the changelog from recent changes.'
+  },
+  {
+    keys: ['version'],
+    explanation: 'Bumps the project’s version number as part of a release.'
+  },
+  {
+    keys: ['login', 'auth'],
+    explanation: 'Logs in to an external service the project publishes to or reads from.'
+  },
+  {
+    keys: ['studio'],
+    explanation: 'Opens a visual admin tool (often a database browser) in your browser.'
   }
 ];
 
@@ -237,6 +313,124 @@ const TOOL_INTENTS: ToolIntent[] = [
   {
     test: /uvicorn|flask\s+run|manage\.py\s+runserver/,
     explanation: 'Starts the development server so you can preview the app in your browser.'
+  },
+  {
+    test: /wrangler\s+dev|netlify\s+dev|vercel\s+dev|firebase\s+(serve|emulators)/,
+    explanation: 'Runs a local imitation of the cloud platform so you can test without deploying.'
+  },
+  {
+    test: /\bserverless\b|\bsls\s|\bsam\s+(local|build|deploy)|\bcdk\s/,
+    explanation: 'Works with the project’s cloud infrastructure definition.'
+  },
+  {
+    test: /terraform|pulumi/,
+    explanation:
+      'Manages cloud infrastructure from configuration files — changes real resources, so read before running.'
+  },
+  {
+    test: /\bansible\b|\bpacker\b/,
+    explanation:
+      'Automates server setup and machine images — usually for operations, not day-to-day coding.'
+  },
+  {
+    test: /kubectl|\bhelm\b|skaffold|minikube|\bk9s\b/,
+    explanation: 'Manages apps running on a Kubernetes cluster.'
+  },
+  {
+    test: /graphql-codegen|apollo\s+codegen/,
+    explanation: 'Generates typed code from the GraphQL schema so queries stay in sync.'
+  },
+  {
+    test: /openapi|swagger/,
+    explanation: 'Generates or serves the API documentation/spec.'
+  },
+  {
+    test: /typedoc|jsdoc|api-extractor/,
+    explanation: 'Generates reference documentation from comments in the code.'
+  },
+  {
+    test: /license-checker|licensee/,
+    explanation: 'Checks the licenses of installed packages for compliance.'
+  },
+  {
+    test: /npm-check-updates|\bncu\b|taze|renovate/,
+    explanation: 'Finds newer versions of the project’s packages.'
+  },
+  {
+    test: /npm\s+audit|pnpm\s+audit|yarn\s+audit|\bsnyk\b|\bosv-scanner\b/,
+    explanation: 'Checks installed packages for known security problems.'
+  },
+  {
+    test: /stylelint/,
+    explanation: 'Checks the stylesheets (CSS) for mistakes and style problems.'
+  },
+  {
+    test: /markdownlint|\bremark\b|\bvale\b/,
+    explanation: 'Checks the documentation files for style and formatting problems.'
+  },
+  {
+    test: /cspell|codespell|typos/,
+    explanation: 'Spell-checks the code and documentation.'
+  },
+  {
+    test: /\btsc\s+--watch|\btsc\s+-w\b/,
+    explanation: 'Keeps the TypeScript checker running, re-checking every time you save.'
+  },
+  {
+    test: /\bpm2\b/,
+    explanation: 'Runs the app under a process manager that keeps it alive in the background.'
+  },
+  {
+    test: /json-server|\bmsw\b|mockoon/,
+    explanation: 'Starts a fake API server so you can develop the frontend without a real backend.'
+  },
+  {
+    test: /lighthouse|web-vitals|pagespeed/,
+    explanation: 'Measures how fast and accessible the site is.'
+  },
+  {
+    test: /\bmaildev\b|mailhog|\bethereal\b/,
+    explanation: 'Starts a local inbox that catches the emails the app sends during development.'
+  },
+  {
+    test: /\bngrok\b|cloudflared|localtunnel/,
+    explanation: 'Opens a temporary public URL that forwards to your local app.'
+  },
+  {
+    test: /sanity\s+(dev|start)|contentful|payload\s+dev/,
+    explanation: 'Starts the content-management (CMS) part of the project.'
+  },
+  {
+    test: /supabase\s+(start|db)/,
+    explanation: 'Runs the local Supabase stack (database and auth) for development.'
+  },
+  {
+    test: /\bdeno\s+(run|task)|\bbun\s+run/,
+    explanation: 'Runs the app with an alternative JavaScript runtime.'
+  },
+  {
+    test: /cargo\s+run/,
+    explanation: 'Runs the Rust program.'
+  },
+  {
+    test: /cargo\s+(build|check)/,
+    explanation: 'Builds or checks the Rust program.'
+  },
+  {
+    test: /\bmvn\b|gradle/,
+    explanation: 'Builds or runs the Java project with its build tool.'
+  },
+  {
+    test: /dotnet\s+(run|watch)/,
+    explanation: 'Runs the .NET app.'
+  },
+  {
+    test: /\bpip\s+install|poetry\s+install|\buv\s+(sync|pip)/,
+    explanation: 'Installs the Python packages the project needs.'
+  },
+  {
+    test: /celery/,
+    explanation: 'Starts the background job worker that processes queued tasks.'
   }
 ];
 

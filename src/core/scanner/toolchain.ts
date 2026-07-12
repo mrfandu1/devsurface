@@ -14,14 +14,17 @@ const TOOLS: Record<ToolCategory, Array<{ packageName: string; label: string }>>
     { packageName: '@playwright/test', label: 'Playwright' },
     { packageName: 'cypress', label: 'Cypress' },
     { packageName: 'tap', label: 'node-tap' },
-    { packageName: 'uvu', label: 'uvu' }
+    { packageName: 'uvu', label: 'uvu' },
+    { packageName: '@japa/runner', label: 'Japa' },
+    { packageName: 'karma', label: 'Karma' }
   ],
   linter: [
     { packageName: 'eslint', label: 'ESLint' },
     { packageName: '@biomejs/biome', label: 'Biome' },
     { packageName: 'oxlint', label: 'Oxlint' },
     { packageName: 'standard', label: 'Standard' },
-    { packageName: 'xo', label: 'XO' }
+    { packageName: 'xo', label: 'XO' },
+    { packageName: 'stylelint', label: 'Stylelint' }
   ],
   formatter: [
     { packageName: 'prettier', label: 'Prettier' },
@@ -65,7 +68,11 @@ const CI_MARKERS: Array<{ marker: string; label: string }> = [
   { marker: 'azure-pipelines.yml', label: 'Azure Pipelines' },
   { marker: 'Jenkinsfile', label: 'Jenkins' },
   { marker: '.travis.yml', label: 'Travis CI' },
-  { marker: path.join('.buildkite', 'pipeline.yml'), label: 'Buildkite' }
+  { marker: path.join('.buildkite', 'pipeline.yml'), label: 'Buildkite' },
+  { marker: 'bitbucket-pipelines.yml', label: 'Bitbucket Pipelines' },
+  { marker: '.drone.yml', label: 'Drone CI' },
+  { marker: 'cloudbuild.yaml', label: 'Google Cloud Build' },
+  { marker: path.join('.woodpecker', 'pipeline.yml'), label: 'Woodpecker CI' }
 ];
 
 export const EMPTY_TOOLCHAIN: ToolchainInfo = {

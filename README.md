@@ -162,6 +162,13 @@ Run DevSurface without installing it globally:
 | `devsurface doctor`                | Print setup and repo health warnings (`--json`, `--fail-on`).         |
 | `devsurface verify`                | Run the quality scripts (lint, typecheck, test, build) in sequence.   |
 | `devsurface explain [script]`      | Explain package scripts in plain English (`--json`).                  |
+| `devsurface summary`               | Explain the whole project in one plain-English paragraph (`--json`).  |
+| `devsurface quickstart`            | Print a numbered first-run recipe with exact commands (`--json`).     |
+| `devsurface tips`                  | Show friendly, project-aware tips for newcomers (`--json`).           |
+| `devsurface learn [term]`          | Look up developer jargon in a 100-term plain-English glossary.        |
+| `devsurface why "<error>"`         | Translate a scary error message into plain English (also via pipe).   |
+| `devsurface system`                | Check whether this computer has the tools the project needs.          |
+| `devsurface search <query>`        | Search scripts, env keys, ports, services, and the glossary at once.  |
 | `devsurface history`               | Show recent script runs recorded by the dashboard (`--json`).         |
 | `devsurface badge`                 | Generate a setup-readiness SVG badge for the README.                  |
 | `devsurface ports --free <port>`   | Stop the process occupying a port (with safety guardrails).           |

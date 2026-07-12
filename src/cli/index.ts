@@ -25,6 +25,13 @@ import {
   workspaceRemoveCommand
 } from './commands/workspace.js';
 import { freePortCommand } from './commands/ports.js';
+import { learnCommand } from './commands/learn.js';
+import { tipsCommand } from './commands/tips.js';
+import { summaryCommand } from './commands/summary.js';
+import { systemCommand } from './commands/system.js';
+import { quickstartCommand } from './commands/quickstart.js';
+import { whyCommand } from './commands/why.js';
+import { searchCommand } from './commands/search.js';
 import { printUpdateNotice } from './updateCheck.js';
 import { DEV_SURFACE_VERSION } from '../version.js';
 
@@ -162,7 +169,8 @@ program
 
 program
   .command('doctor')
-  .description('Print setup health warnings.')
+  .alias('checkup')
+  .description('Check the project for setup problems and explain each one.')
   .option('--json', 'print warnings as JSON')
   .option(
     '--fail-on <severity>',
@@ -222,9 +230,83 @@ program
 
 program
   .command('onboard')
+  .alias('guide')
   .description('Print a guided setup checklist with readiness score.')
   .action(() => {
     handle(onboardCommand(process.cwd()));
+  });
+
+program
+  .command('quickstart')
+  .alias('firstrun')
+  .description('Print a numbered first-run recipe: exact commands, in order, with reasons.')
+  .option('--json', 'print the steps as JSON')
+  .action((options: { json?: boolean }) => {
+    handle(quickstartCommand(process.cwd(), { json: options.json }), {
+      updateNotice: options.json !== true
+    });
+  });
+
+program
+  .command('summary')
+  .alias('about')
+  .description('Explain this project in one plain-English paragraph plus a fact sheet.')
+  .option('--json', 'print the summary as JSON')
+  .action((options: { json?: boolean }) => {
+    handle(summaryCommand(process.cwd(), { json: options.json }), {
+      updateNotice: options.json !== true
+    });
+  });
+
+program
+  .command('tips')
+  .description('Show friendly, project-aware tips for newcomers.')
+  .option('--json', 'print tips as JSON')
+  .action((options: { json?: boolean }) => {
+    handle(tipsCommand(process.cwd(), { json: options.json }), {
+      updateNotice: options.json !== true
+    });
+  });
+
+program
+  .command('learn')
+  .alias('glossary')
+  .argument('[term]', 'jargon to look up (omit for the full glossary)')
+  .description('Look up developer jargon in a plain-English glossary.')
+  .option('--json', 'print entries as JSON')
+  .action((term: string | undefined, options: { json?: boolean }) => {
+    handle(learnCommand(term, { json: options.json }), { updateNotice: options.json !== true });
+  });
+
+program
+  .command('why')
+  .alias('explain-error')
+  .argument('[error...]', 'the error text to translate (or pipe output into this command)')
+  .description('Translate a scary error message into plain English with a next step.')
+  .action((parts: string[]) => {
+    handle(whyCommand(parts), { updateNotice: false });
+  });
+
+program
+  .command('system')
+  .alias('check-computer')
+  .description('Check whether this computer has the tools the project needs.')
+  .option('--json', 'print the report as JSON')
+  .action((options: { json?: boolean }) => {
+    handle(systemCommand(process.cwd(), { json: options.json }), {
+      updateNotice: options.json !== true
+    });
+  });
+
+program
+  .command('search')
+  .alias('find')
+  .argument('<query>', 'text to look for')
+  .description(
+    'Search everything DevSurface knows here: scripts, env keys, ports, services, glossary.'
+  )
+  .action((query: string) => {
+    handle(searchCommand(query, process.cwd()));
   });
 
 program

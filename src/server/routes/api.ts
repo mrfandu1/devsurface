@@ -25,6 +25,10 @@ import { detectPorts } from '../../core/scanner/ports.js';
 import { findPortOwners } from '../../core/scanner/portOwner.js';
 import type { RunHistoryStore } from '../../core/history/index.js';
 import { buildOnboardingPlan } from '../../core/onboarding/index.js';
+import { buildFactSheet, buildPlainSummary } from '../../core/summary/index.js';
+import { buildTips } from '../../core/tips/index.js';
+import { buildQuickstart } from '../../core/quickstart/index.js';
+import { checkSystem } from '../../core/system/index.js';
 import { renderPassportHtml } from '../../core/passport/index.js';
 import { scanProject } from '../../core/scanner/index.js';
 import type { Hub } from '../../core/hub/runtime.js';
@@ -326,6 +330,22 @@ async function onboardingForRoot(root: string) {
 }
 
 /**
+ * Everything the Learn view needs in one payload: the plain-English summary,
+ * fact sheet, contextual tips, the quickstart recipe, and machine readiness.
+ */
+async function insightsForRoot(root: string) {
+  const scan = await scanProject(root);
+  const [quickstart, system] = await Promise.all([buildQuickstart(scan), checkSystem(scan)]);
+  return {
+    summary: buildPlainSummary(scan),
+    facts: buildFactSheet(scan),
+    tips: buildTips(scan),
+    quickstart,
+    system
+  };
+}
+
+/**
  * Render the shareable Project Passport for a workspace. Inline by default so
  * it previews in a browser tab; `?download=1` sets an attachment filename.
  */
@@ -452,6 +472,12 @@ function registerWorkspaceRoutes(
     const ws = await resolveWorkspace(context.req.param('id'));
     if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
     return context.json(await onboardingForRoot(ws.root));
+  });
+
+  app.get('/api/workspaces/:id/insights', async (context) => {
+    const ws = await resolveWorkspace(context.req.param('id'));
+    if (!ws) return context.json({ error: 'Workspace not found.' }, 404);
+    return context.json(await insightsForRoot(ws.root));
   });
 
   app.get('/api/workspaces/:id/passport', async (context) => {
@@ -767,6 +793,12 @@ export function registerHubApiRoutes(
     return context.json(await onboardingForRoot(hub.ensure(entries[0]).root));
   });
 
+  app.get('/api/insights', async (context) => {
+    const entries = await hub.registry.list();
+    if (entries.length === 0) return context.json({ error: 'No workspaces registered.' }, 404);
+    return context.json(await insightsForRoot(hub.ensure(entries[0]).root));
+  });
+
   app.get('/api/passport', async (context) => {
     const entries = await hub.registry.list();
     if (entries.length === 0) return context.json({ error: 'No workspaces registered.' }, 404);
@@ -823,6 +855,10 @@ export function registerApiRoutes(
 
   app.get('/api/onboarding', async (context) => {
     return context.json(await onboardingForRoot(options.projectRoot));
+  });
+
+  app.get('/api/insights', async (context) => {
+    return context.json(await insightsForRoot(options.projectRoot));
   });
 
   app.get('/api/passport', async (context) => {

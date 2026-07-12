@@ -1,5 +1,148 @@
 # Changelog
 
+## 1.0.1
+
+The "plain English" release: 200+ new and enhanced features aimed squarely at
+making DevSurface effortless for people who don't live in a terminal.
+
+### New — Learn view in the dashboard
+
+- A new **Learn** section in the sidebar (keyboard shortcut `9`, command
+  palette entry, new book icon) with:
+  - **"This project, in plain English"** — a friendly paragraph explaining
+    what the project is, what it's built with, what you need before it runs,
+    how to start it, and what safety nets it has, plus an at-a-glance fact
+    grid (name, version, language, frameworks, package manager, scripts,
+    env status, Docker services, git branch, Node requirement).
+  - **"First run, step by step"** — a numbered quickstart recipe with the
+    exact commands, a why-sentence for each step, ✓ checkmarks on steps the
+    scan shows are already done, and one-click **Copy** buttons on every
+    command.
+  - **"Tips for this project"** — contextual advice badges (Do this /
+    Shortcut / Good to know) generated from the scan.
+  - **"Is this computer ready?"** — OS, CPU, and RAM facts plus tool checks
+    with plain-English install hints and a one-line verdict.
+  - **"Paste an error, get plain English"** — paste any scary error output
+    and get a friendly explanation plus one concrete next step. Runs
+    entirely in the browser; nothing you paste leaves your machine.
+  - **Jargon dictionary** — a searchable glossary of **100 developer terms**
+    (repository, port, lockfile, merge conflict, container, …) in nine
+    friendly categories, each defined without circular jargon.
+
+### New — accessibility settings
+
+- **Text size** setting (Comfortable / Large / Extra large) that scales the
+  whole dashboard.
+- **High contrast** mode with stronger text and border colors in both light
+  and dark themes. Both persist across reloads like every other setting.
+
+### New — seven CLI commands (with beginner-friendly aliases)
+
+- **`devsurface summary`** (alias `about`, `--json`) — the plain-English
+  project paragraph and fact sheet in the terminal.
+- **`devsurface quickstart`** (alias `firstrun`, `--json`) — the numbered
+  first-run recipe with exact commands and reasons.
+- **`devsurface tips`** (`--json`) — contextual newcomer tips.
+- **`devsurface learn [term]`** (alias `glossary`, `--json`) — look up any
+  jargon term; prints the whole categorized glossary with no argument and
+  falls back to fuzzy related-term search for near-misses.
+- **`devsurface why "<error>"`** (alias `explain-error`) — translate an
+  error message into plain English; also reads piped output, so
+  `npm run build 2>&1 | devsurface why` works, and offers two universal
+  debugging tricks when the error isn't recognized.
+- **`devsurface system`** (alias `check-computer`, `--json`) — "is my
+  computer ready?" with OS/CPU/RAM facts and tool version checks.
+- **`devsurface search <query>`** (alias `find`) — one search across
+  scripts, configured commands, env keys (values never shown), ports,
+  Docker services, and the glossary.
+- Existing commands got friendlier: `doctor` gained the `checkup` alias and
+  a plainer description, and `onboard` gained the `guide` alias.
+
+### New — core engines behind all of the above
+
+- **Friendly error translator**: recognizes **25 common error signatures**
+  — busy port, missing module, tool not installed (including Windows "not
+  recognized"), network failures, connection refused, permission denied,
+  Windows file locks (EPERM), out of memory, disk full, too many open
+  files, missing env vars, Docker daemon down, not-a-git-repo, merge
+  conflicts, Node version mismatches, npm 404, ERESOLVE peer-dependency
+  fights, registry auth, corporate-proxy TLS failures, TypeScript errors,
+  syntax errors, failing tests, lint problems, unreachable databases, and
+  missing Python — each with a title, an explanation, and one next step.
+  It never guesses: unknown errors return honest general advice.
+- **Tips engine**: **25 contextual rules** (dev script, env setup, Docker
+  ordering, daemon off, monorepo layout, test/format/lint shortcuts, Node
+  pins, package-manager loyalty, README, branch safety, uncommitted
+  changes, behind-upstream, busy ports, Storybook, configured docs, VS Code
+  extensions, CI safety net, TypeScript squiggles, e2e runners, ORM
+  migrations, launch sequences, setup guides, …) plus 6 evergreen
+  teach-a-newcomer tips, ordered so "do this" always comes first.
+- **Plain-summary engine**: five sentence generators (identity,
+  requirements, how-to-run, quality safety nets, project shape) that adapt
+  to sparse projects, plus a ten-fact sheet builder.
+- **Quickstart engine**: nine step generators (Node version, install with
+  already-done detection, OS-aware env copy command, env fill,
+  `docker compose up`, database migrations, dev script, open-in-browser
+  with the detected port, and a README fallback), package-manager-aware
+  (`npm`/`pnpm`/`yarn`/`bun`).
+- **System readiness engine**: parallel, time-boxed version probes for the
+  project's package manager, git, and Docker (marked "not needed" when the
+  project has no compose files), plus OS/arch/CPU/RAM facts, a low-memory
+  warning, and a plain verdict.
+- **Glossary engine**: 100 terms, nine categories, alias matching
+  ("repo" → Repository, "pr" → Pull request), and full-text search.
+
+### New — API
+
+- `GET /api/insights` (plus `/api/workspaces/:id/insights` and the hub
+  alias): summary, facts, tips, quickstart, and system readiness in one
+  payload — everything the Learn view needs in a single request.
+
+### Enhanced — the project understanding got much deeper
+
+- **Script explanations**: 48 new explanation rules covering ~90 more
+  script names and tools — staging/preview, validate, audit,
+  update/upgrade/bump, i18n, email templates, proxy, tunnel (ngrok,
+  cloudflared, localtunnel), mocks (json-server, MSW, Mockoon), profiling,
+  sitemap, assets, sync, dead-code (knip), bundle size, changelog, version
+  bumps, registry login, database studio, cloud emulators (wrangler,
+  netlify, vercel, firebase), serverless/SAM/CDK, Terraform/Pulumi,
+  Ansible/Packer, Kubernetes (kubectl, helm, skaffold, minikube), GraphQL
+  codegen, OpenAPI/Swagger, TypeDoc/JSDoc, license checkers,
+  npm-check-updates, security audits (snyk, osv-scanner), Stylelint,
+  markdownlint, spell checkers, `tsc --watch`, pm2, Lighthouse, local mail
+  catchers (MailDev, MailHog), CMSes (Sanity, Contentful, Payload),
+  Supabase, Deno/Bun, Cargo, Maven/Gradle, .NET, pip/Poetry/uv, and Celery.
+- **Framework detection**: 53 more frameworks and libraries now show up in
+  the overview and summaries — React Router, TanStack Router/Query, Redux
+  (+Toolkit), Zustand, Jotai, MobX, RxJS, GraphQL, Apollo (client and
+  server), Socket.IO, Mongoose, Sequelize, TypeORM, Knex, Kysely, Supabase,
+  Firebase, Convex, Stripe, OpenAI SDK, Anthropic SDK, Vercel AI SDK,
+  LangChain, Three.js, D3, Chart.js, Recharts, Framer Motion, Material UI,
+  Chakra UI, Mantine, Ant Design, Bootstrap, styled-components, Emotion,
+  Sass, NextAuth, Clerk, Passport, BullMQ, Redis/PostgreSQL/MySQL/SQLite
+  clients, Puppeteer, Discord.js, Telegram bots, Commander, yargs, and Ink.
+  Duplicate labels are now deduplicated.
+- **Secret detection**: `.env.example` scanning now decisively recognizes
+  real token shapes from 18 vendors (GitHub fine-grained and classic,
+  Slack, Stripe live/test/webhook, AWS, Google, npm, GitLab, DigitalOcean,
+  Shopify, SendGrid, Hugging Face, PyPI, Figma, Linear, Notion, Sentry,
+  Render, Tailscale) even when simple entropy checks would miss them.
+- **Six new doctor checks**: Dockerfile without `.dockerignore`, hardcoded
+  auth tokens in `.npmrc` (error — rotate and use `${NPM_TOKEN}`), scripts
+  that use `sudo`, no declared Node version anywhere, insecure `http://`
+  defaults in `.env.example`, and stray lockfiles inside `src/`-like
+  folders from installs run in the wrong directory.
+- **Toolchain detection**: Japa and Karma test runners, Stylelint, and four
+  more CI providers (Bitbucket Pipelines, Drone CI, Google Cloud Build,
+  Woodpecker CI).
+- **Keyboard shortcuts**: the view-jump row grew to `1–9` and the shortcuts
+  overlay documents it.
+
+Everything remains fully local: no network calls, no AI, no telemetry —
+the new insight, translation, and glossary features are deterministic and
+run on your machine.
+
 ## 1.0.0
 
 DevSurface 1.0: the dashboard becomes live, launchable, and persistent.

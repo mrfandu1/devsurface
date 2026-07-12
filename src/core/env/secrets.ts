@@ -26,6 +26,14 @@ function charsetVariety(value: string): number {
   return variety;
 }
 
+/**
+ * Vendor-specific token shapes that identify a real credential on their own:
+ * GitHub, Slack, Stripe, AWS, Google, npm, GitLab, DigitalOcean, Shopify,
+ * SendGrid, Mailgun-style, Hugging Face, PyPI, OpenAI/Anthropic-style keys.
+ */
+const KNOWN_TOKEN_PREFIXES =
+  /^(ghp_|gho_|ghu_|ghs_|ghr_|github_pat_|xox[bapsro]-|sk-|sk_live_|sk_test_|pk_live_|rk_live_|whsec_|AKIA|ASIA|AIza|npm_|glpat-|glrt-|dop_v1_|doo_v1_|shpat_|shpss_|SG\.|hf_|pypi-|figd_|lin_api_|ntn_|secret_|sntrys_|rnd_|tskey-)/;
+
 /** True when a single example value looks like a real credential, not a placeholder. */
 export function looksLikeRealSecret(value: string): boolean {
   const trimmed = value.trim().replace(/^["']|["']$/g, '');
@@ -35,8 +43,12 @@ export function looksLikeRealSecret(value: string): boolean {
   if (PLACEHOLDER_PATTERNS.some((pattern) => pattern.test(trimmed))) {
     return false;
   }
+  // A recognized vendor prefix on a long value is decisive by itself.
+  if (KNOWN_TOKEN_PREFIXES.test(trimmed)) {
+    return true;
+  }
   // Long single-charset strings ("aaaa...") are placeholders; real tokens mix cases/digits.
-  if (charsetVariety(trimmed) < 3 && !/^(sk|pk|ghp|gho|xox[bap]|AKIA|AIza)/.test(trimmed)) {
+  if (charsetVariety(trimmed) < 3) {
     return false;
   }
   // URLs with embedded credentials count; bare URLs were excluded above.
