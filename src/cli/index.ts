@@ -42,6 +42,20 @@ import { snapshotCommand } from './commands/snapshot.js';
 import { bundleCommand } from './commands/bundle.js';
 import { watchCommand } from './commands/watch.js';
 import { completionsCommand } from './commands/completions.js';
+import { secretsCommand } from './commands/secrets.js';
+import { envUsageCommand } from './commands/envUsage.js';
+import { scriptsCommand } from './commands/scripts.js';
+import { activityCommand } from './commands/activity.js';
+import { depsHealthCommand } from './commands/depsHealth.js';
+import { testInfoCommand } from './commands/testinfo.js';
+import { configsCommand } from './commands/configs.js';
+import { bloatCommand } from './commands/bloat.js';
+import { linksCommand } from './commands/links.js';
+import { ciCommand } from './commands/ci.js';
+import { standupCommand } from './commands/standup.js';
+import { releaseNotesCommand } from './commands/release.js';
+import { readmeCommand } from './commands/readme.js';
+import { scorecardCommand } from './commands/scorecard.js';
 import { printUpdateNotice } from './updateCheck.js';
 import { DEV_SURFACE_VERSION } from '../version.js';
 
@@ -214,6 +228,16 @@ env
   .description('Append keys that exist in .env.example but not in .env (never overwrites).')
   .action(() => {
     handle(envSyncCommand(process.cwd()));
+  });
+
+env
+  .command('usage')
+  .description('Show where each env variable is read in code, plus unused/undocumented keys.')
+  .option('--json', 'print the report as JSON')
+  .action((options: { json?: boolean }) => {
+    handle(envUsageCommand(process.cwd(), { json: options.json }), {
+      updateNotice: options.json !== true
+    });
   });
 
 program
@@ -518,6 +542,149 @@ program
         ? pickScriptInteractively(process.cwd())
         : runCommand(script, process.cwd())
     );
+  });
+
+program
+  .command('secrets')
+  .alias('scan-secrets')
+  .description('Scan source files for hardcoded credentials (values are redacted).')
+  .option('--json', 'print the report as JSON')
+  .action((options: { json?: boolean }) => {
+    handle(secretsCommand(process.cwd(), { json: options.json }), {
+      updateNotice: options.json !== true
+    });
+  });
+
+program
+  .command('scripts')
+  .description('Explain package scripts: which call which, hooks, and portability issues.')
+  .option('--json', 'print the report as JSON')
+  .action((options: { json?: boolean }) => {
+    handle(scriptsCommand(process.cwd(), { json: options.json }), {
+      updateNotice: options.json !== true
+    });
+  });
+
+program
+  .command('activity')
+  .description('Show when this project gets worked on and which files change the most.')
+  .option('-d, --days <count>', 'analysis window in days', (value) => Number(value), 90)
+  .option('--json', 'print the report as JSON')
+  .action((options: { json?: boolean; days: number }) => {
+    handle(activityCommand(process.cwd(), { json: options.json, days: options.days }), {
+      updateNotice: options.json !== true
+    });
+  });
+
+program
+  .command('deps-health')
+  .alias('deps-doctor')
+  .description('Heaviest packages, duplicate versions, unused and phantom dependencies.')
+  .option('--json', 'print the report as JSON')
+  .action((options: { json?: boolean }) => {
+    handle(depsHealthCommand(process.cwd(), { json: options.json }), {
+      updateNotice: options.json !== true
+    });
+  });
+
+program
+  .command('tests')
+  .alias('test-info')
+  .description('A static read of the test suite: counts, skips, focused tests, and gaps.')
+  .option('--json', 'print the report as JSON')
+  .action((options: { json?: boolean }) => {
+    handle(testInfoCommand(process.cwd(), { json: options.json }), {
+      updateNotice: options.json !== true
+    });
+  });
+
+program
+  .command('configs')
+  .alias('config-files')
+  .description('List configuration files and validate the JSON ones.')
+  .option('--json', 'print the report as JSON')
+  .action((options: { json?: boolean }) => {
+    handle(configsCommand(process.cwd(), { json: options.json }), {
+      updateNotice: options.json !== true
+    });
+  });
+
+program
+  .command('bloat')
+  .description('Find large files, Git LFS candidates, and build output committed by mistake.')
+  .option('--json', 'print the report as JSON')
+  .action((options: { json?: boolean }) => {
+    handle(bloatCommand(process.cwd(), { json: options.json }), {
+      updateNotice: options.json !== true
+    });
+  });
+
+program
+  .command('links')
+  .alias('check-links')
+  .description('Verify every relative link in the Markdown docs points to a real file.')
+  .option('--json', 'print the report as JSON')
+  .action((options: { json?: boolean }) => {
+    handle(linksCommand(process.cwd(), { json: options.json }), {
+      updateNotice: options.json !== true
+    });
+  });
+
+program
+  .command('ci')
+  .description('Explain CI pipelines and check they match the local package scripts.')
+  .option('--json', 'print the report as JSON')
+  .action((options: { json?: boolean }) => {
+    handle(ciCommand(process.cwd(), { json: options.json }), {
+      updateNotice: options.json !== true
+    });
+  });
+
+program
+  .command('standup')
+  .description('Your recent commits grouped by day, plus what is still uncommitted.')
+  .option('-d, --days <count>', 'how many days back to include', (value) => Number(value), 1)
+  .option('--mine', 'only your commits (by git user.name)')
+  .option('--json', 'print the report as JSON')
+  .action((options: { json?: boolean; days: number; mine?: boolean }) => {
+    handle(
+      standupCommand(process.cwd(), { json: options.json, days: options.days, mine: options.mine }),
+      {
+        updateNotice: options.json !== true
+      }
+    );
+  });
+
+program
+  .command('release-notes')
+  .alias('changelog-draft')
+  .description('Draft release notes from commits since the last tag, grouped by type.')
+  .option('--json', 'print the report as JSON')
+  .action((options: { json?: boolean }) => {
+    handle(releaseNotesCommand(process.cwd(), { json: options.json }), {
+      updateNotice: options.json !== true
+    });
+  });
+
+program
+  .command('readme')
+  .description('Grade the README against the sections newcomers look for.')
+  .option('--json', 'print the report as JSON')
+  .action((options: { json?: boolean }) => {
+    handle(readmeCommand(process.cwd(), { json: options.json }), {
+      updateNotice: options.json !== true
+    });
+  });
+
+program
+  .command('scorecard')
+  .alias('grade')
+  .description('One A–F health grade for the whole project, with the top things to improve.')
+  .option('--json', 'print the scorecard as JSON')
+  .action((options: { json?: boolean }) => {
+    handle(scorecardCommand(process.cwd(), { json: options.json }), {
+      updateNotice: options.json !== true
+    });
   });
 
 await program.parseAsync(process.argv);

@@ -35,6 +35,7 @@ import type { Hub } from '../../core/hub/runtime.js';
 import { DEV_SURFACE_VERSION } from '../../version.js';
 import { isAllowedLocalOrigin, isSameOrigin } from '../localAccess.js';
 import { registerToolRoutes } from './tools.js';
+import { registerInsightRoutes } from './insights.js';
 import { createApiAccessMiddleware } from '../accessControl.js';
 import { hasValidMutationToken } from '../mutationToken.js';
 import { isAllowedTerminalCommand } from '../terminal.js';
@@ -705,6 +706,11 @@ function registerWorkspaceRoutes(
     },
     history
   );
+
+  registerInsightRoutes(app, '/api/workspaces/:id', async (context) => {
+    const ws = await resolveWorkspace(context.req.param('id') ?? '');
+    return ws === null ? null : { root: ws.root };
+  });
 }
 
 export function registerHubApiRoutes(
@@ -1075,4 +1081,6 @@ export function registerApiRoutes(
     root: options.projectRoot,
     processManager: options.processManager
   }));
+
+  registerInsightRoutes(app, '/api', async () => ({ root: options.projectRoot }));
 }

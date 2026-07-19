@@ -1,5 +1,154 @@
 # Changelog
 
+## 1.2.1
+
+**100 new features**, organized into fourteen new systems. Everything stays
+fully local — no network calls, no AI, no telemetry — every scan is read-only
+and time-boxed, and any secret a scan touches is redacted before it is ever
+shown so the reports themselves can never leak anything.
+
+### Secret leak scanner
+
+1. A secret scanner with ten detectors: AWS access keys, GitHub tokens, Slack tokens, Stripe live keys, OpenAI-style keys, Google API keys, private-key blocks, passwords embedded in URLs, hardcoded secret assignments, and JWT literals
+2. Two severity tiers (critical vs warning), each with plain-English remediation advice
+3. Every match redacted to a short prefix — the report itself can never leak a credential
+4. Lines that read from the environment (`process.env.X`, `os.getenv`) and obvious placeholders (`your-key-here`) are skipped, so real code doesn't false-positive
+5. `.env` files are deliberately never scanned — secrets are supposed to live there
+6. Lockfiles skipped, 25+ scannable extensions, per-file size caps
+7. `devsurface secrets` command that exits nonzero when a critical secret is found
+8. A "Secret scan" dashboard tab with redacted previews and file:line references
+9. `/secrets` API endpoint
+
+### Environment-variable usage explorer
+
+10. Finds every place an env variable is read — `process.env`, `import.meta.env`, `os.environ`, `os.getenv`, Go `os.Getenv`, Rust `std::env::var`, Ruby `ENV`, Java `System.getenv`
+11. Per-key read counts with up to ten code sites (file:line) each
+12. "Declared but never read" detection for dead settings in `.env`/`.env.example`
+13. "Read but undocumented" detection for keys missing from `.env.example`
+14. Framework-injected keys (`NODE_ENV`, `PORT`, …) excluded from the undocumented list
+15. `devsurface env usage` command
+16. `/env/usage` API endpoint — names only, values are never read
+
+### Script intelligence
+
+17. Categorizes every package script (dev, build, test, lint, format, deploy, db, other)
+18. A script call-graph: which scripts invoke which others via npm/pnpm/yarn run
+19. Pre/post-hook detection so you can see what runs automatically around a script
+20. Broken-reference detection when a script calls another script that doesn't exist
+21. Missing-file detection for `node`/`tsx` entry points that aren't on disk
+22. Cross-platform portability warnings (`FOO=bar` prefixes, `rm -rf`, `cp`, `sudo`, over-long one-liners)
+23. Orphan-script detection — scripts nothing references and no convention explains
+24. `devsurface scripts` command
+25. `/scripts` API endpoint
+
+### Git activity analytics
+
+26. Commit-rhythm analytics over a configurable day window
+27. Commits-by-weekday histogram
+28. Commits-by-hour sparkline (24 buckets)
+29. File-churn ranking: which files change the most
+30. Repository age computed from the very first commit
+31. Longest and current commit streaks
+32. Busiest-weekday callout
+33. `devsurface activity` command with `--days`
+34. `/activity` API endpoint and an "Activity" dashboard tab
+
+### Dependency health (offline)
+
+35. Dependency health computed straight from `node_modules` — no registry calls
+36. Heaviest-packages ranking by on-disk size
+37. Duplicate-version detection for packages installed at more than one version
+38. Unused-dependency detection (declared in package.json, imported nowhere)
+39. Phantom-dependency detection (imported in source, never declared)
+40. node_modules total size and installed-package count
+41. Tooling packages (eslint, prettier, types, …) excluded from unused false-positives
+42. `devsurface deps-health` command
+43. `/deps/health` endpoint and a "Dependency health" dashboard tab
+
+### Test insights (static)
+
+44. Static test-suite analysis that never runs the tests
+45. Test and suite counts across JS/TS, Python, Go, Ruby, and Java naming conventions
+46. Skipped-test counting (`.skip`, `xit`, `@pytest.mark.skip`, `t.Skip`)
+47. Focused-test detection (`.only`, `fit`, `fdescribe`) — the ones that silently disable everything else in CI
+48. `it.todo` counting
+49. Untested-source detection: source files with no matching test file
+50. `devsurface tests` command
+51. `/tests` API endpoint
+52. A "Tests" dashboard tab with a prominent `.only` warning banner
+
+### Config-file inspector
+
+53. Discovers and labels 35+ known config files at the repo root
+54. Validates the JSON ones and reports the exact parse error when they're broken
+55. JSONC comment stripping so `tsconfig.json`-style files validate correctly
+56. Format classification (json/yaml/toml/ini/js/other) with per-format counts
+57. Invalid-file rollup; the command exits nonzero when any config fails to parse
+58. `devsurface configs` command
+59. `/configs` API endpoint
+
+### Repository bloat finder
+
+60. Largest tracked files across the source tree (vendored dirs excluded)
+61. Git-LFS candidate detection for large binary and media files
+62. "Committed by mistake" detection (`.min.js`, `.map`, logs, `.DS_Store`, `.orig`, `.bak`, …)
+63. Biggest-directories ranking by file count and size
+64. Binary-vs-text classification across 40+ extensions
+65. Whole-tree file and byte totals
+66. `devsurface bloat` command
+67. `/bloat` API endpoint
+
+### Markdown link checker
+
+68. Verifies that every relative link and image in the docs points at a real file
+69. External http(s) links are listed but never fetched — DevSurface makes no network calls
+70. Anchor handling: `#section` fragments are stripped before the path is resolved
+71. Path-confined — links that escape the repo are ignored, never reported
+72. Broken-link report grouped by source document with line numbers
+73. `devsurface links` command that exits nonzero when a link is broken
+74. `/links` API endpoint
+
+### CI / workflow insights
+
+75. Reads CI pipelines across GitHub Actions, GitLab CI, CircleCI, Travis, Azure Pipelines, and Bitbucket Pipelines
+76. Trigger extraction (push, pull_request, schedule, …)
+77. Per-workflow job listing
+78. Extracts the project scripts each pipeline actually runs
+79. "CI runs a script package.json doesn't define" detection
+80. "A quality script no workflow runs" detection (lint, typecheck, test, build, format:check)
+81. `devsurface ci` command
+82. `/ci` API endpoint
+
+### Standup helper
+
+83. Your commits grouped by day over a configurable window
+84. `--mine` to filter to your own commits by git `user.name`
+85. A work-in-progress list built from the currently uncommitted files
+86. Relative day labels (Today / Yesterday / date)
+87. `devsurface standup` command (`--days`, `--mine`)
+88. `/standup` API endpoint
+
+### Release-note drafting
+
+89. Drafts release notes from the commits since the latest git tag
+90. Groups commits by Conventional-Commit type (feat, fix, perf, refactor, docs, …)
+91. Parses an existing CHANGELOG.md into structured versions
+92. `devsurface release-notes` command that prints ready-to-paste Markdown
+93. `/release-notes` API endpoint
+
+### README quality scorer
+
+94. Grades the README against ten weighted checks and returns a 0–100 score with an A–F grade
+95. Specific, prioritized suggestions for the next thing to add
+96. `devsurface readme` command
+97. `/readme` API endpoint
+
+### Project scorecard
+
+98. One A–F health grade for the whole project, aggregating documentation, tests, secret hygiene, dependencies, doc links, and version control
+99. Per-category weighted sub-scores, each with a plain-English verdict and the top opportunities to improve
+100.  `devsurface scorecard` command, a `/scorecard` endpoint, and a "Scorecard" dashboard tab
+
 ## 1.1.0
 
 **100 new features**, organized into eleven new systems. Everything remains

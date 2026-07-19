@@ -154,49 +154,63 @@ Run DevSurface without installing it globally:
 | npm     | `npx devsurface`  |
 | Bun     | `bunx devsurface` |
 
-| Command                            | Description                                                           |
-| ---------------------------------- | --------------------------------------------------------------------- |
-| `devsurface`                       | Scan the current project, start the dashboard, and open the browser.  |
-| `devsurface scan`                  | Print detected project information (`--json`, `--markdown`).          |
-| `devsurface ports`                 | Show project ports, what is using them, and free alternatives.        |
-| `devsurface doctor`                | Print setup and repo health warnings (`--json`, `--fail-on`).         |
-| `devsurface verify`                | Run the quality scripts (lint, typecheck, test, build) in sequence.   |
-| `devsurface explain [script]`      | Explain package scripts in plain English (`--json`).                  |
-| `devsurface summary`               | Explain the whole project in one plain-English paragraph (`--json`).  |
-| `devsurface quickstart`            | Print a numbered first-run recipe with exact commands (`--json`).     |
-| `devsurface tips`                  | Show friendly, project-aware tips for newcomers (`--json`).           |
-| `devsurface learn [term]`          | Look up developer jargon in a 100-term plain-English glossary.        |
-| `devsurface why "<error>"`         | Translate a scary error message into plain English (also via pipe).   |
-| `devsurface system`                | Check whether this computer has the tools the project needs.          |
-| `devsurface search <query>`        | Search scripts, env keys, ports, services, and the glossary at once.  |
-| `devsurface notes`                 | Personal per-project notes and checklists (stored outside the repo).  |
-| `devsurface todos`                 | List every TODO/FIXME/HACK comment left in the code.                  |
-| `devsurface stats`                 | Code statistics: lines by language, largest files (`--json`).         |
-| `devsurface deps`                  | Explain every installed dependency; `--licenses` for the rollup.      |
-| `devsurface commits`               | Recent commits, contributors, and uncommitted changes, human-first.   |
-| `devsurface clean`                 | Show reclaimable disk space; `--delete <name>` with confirmation.     |
-| `devsurface snapshot [diff]`       | Freeze the project state; later ask "what changed since?".            |
-| `devsurface bundle`                | Write a shareable, secret-free Markdown help bundle.                  |
-| `devsurface watch`                 | Live terminal status: ports, services, health, every 5 seconds.       |
-| `devsurface doctor --fix`          | Apply every safe automatic fix, then re-run the checkup.              |
-| `devsurface completions <shell>`   | Tab-completion script for bash, zsh, or PowerShell.                   |
-| `devsurface history`               | Show recent script runs recorded by the dashboard (`--json`).         |
-| `devsurface badge`                 | Generate a setup-readiness SVG badge for the README.                  |
-| `devsurface ports --free <port>`   | Stop the process occupying a port (with safety guardrails).           |
-| `devsurface env check`             | Report missing/empty env keys; exits nonzero for CI (`--json`).       |
-| `devsurface env sync`              | Append keys from `.env.example` missing in `.env` (never overwrites). |
-| `devsurface info`                  | Show version, data locations, and workspace count.                    |
-| `devsurface status`                | Check whether a local hub is running (version, uptime, workspaces).   |
-| `devsurface init`                  | Create a starter `devsurface.config.json`.                            |
-| `devsurface passport`              | Generate a shareable HTML onboarding report (Project Passport).       |
-| `devsurface run [script]`          | Run a package script (interactive picker when omitted).               |
-| `devsurface up`                    | Run the launch sequence: Docker services, then the dev script.        |
-| `devsurface upgrade`               | Check the npm registry for a newer DevSurface release.                |
-| `devsurface serve`                 | Start the multi-workspace hub server.                                 |
-| `devsurface workspace add [path]`  | Register a project directory with the local hub.                      |
-| `devsurface workspace list`        | List registered hub workspaces.                                       |
-| `devsurface workspace remove <id>` | Remove a workspace from the hub registry.                             |
-| `devsurface workspace prune`       | Remove workspaces whose directories no longer exist.                  |
+| Command                            | Description                                                             |
+| ---------------------------------- | ----------------------------------------------------------------------- |
+| `devsurface`                       | Scan the current project, start the dashboard, and open the browser.    |
+| `devsurface scan`                  | Print detected project information (`--json`, `--markdown`).            |
+| `devsurface ports`                 | Show project ports, what is using them, and free alternatives.          |
+| `devsurface doctor`                | Print setup and repo health warnings (`--json`, `--fail-on`).           |
+| `devsurface verify`                | Run the quality scripts (lint, typecheck, test, build) in sequence.     |
+| `devsurface explain [script]`      | Explain package scripts in plain English (`--json`).                    |
+| `devsurface summary`               | Explain the whole project in one plain-English paragraph (`--json`).    |
+| `devsurface quickstart`            | Print a numbered first-run recipe with exact commands (`--json`).       |
+| `devsurface tips`                  | Show friendly, project-aware tips for newcomers (`--json`).             |
+| `devsurface learn [term]`          | Look up developer jargon in a 100-term plain-English glossary.          |
+| `devsurface why "<error>"`         | Translate a scary error message into plain English (also via pipe).     |
+| `devsurface system`                | Check whether this computer has the tools the project needs.            |
+| `devsurface search <query>`        | Search scripts, env keys, ports, services, and the glossary at once.    |
+| `devsurface notes`                 | Personal per-project notes and checklists (stored outside the repo).    |
+| `devsurface todos`                 | List every TODO/FIXME/HACK comment left in the code.                    |
+| `devsurface stats`                 | Code statistics: lines by language, largest files (`--json`).           |
+| `devsurface deps`                  | Explain every installed dependency; `--licenses` for the rollup.        |
+| `devsurface commits`               | Recent commits, contributors, and uncommitted changes, human-first.     |
+| `devsurface clean`                 | Show reclaimable disk space; `--delete <name>` with confirmation.       |
+| `devsurface snapshot [diff]`       | Freeze the project state; later ask "what changed since?".              |
+| `devsurface bundle`                | Write a shareable, secret-free Markdown help bundle.                    |
+| `devsurface scorecard`             | One A–F project health grade with the top things to improve (`--json`). |
+| `devsurface secrets`               | Scan source for hardcoded credentials; values are always redacted.      |
+| `devsurface scripts`               | Explain package scripts: call chains, hooks, portability issues.        |
+| `devsurface activity`              | When the project gets worked on and which files change most (`--days`). |
+| `devsurface deps-health`           | Heaviest, duplicate, unused, and phantom dependencies (offline).        |
+| `devsurface tests`                 | Static test-suite read: counts, skips, `.only`, and coverage gaps.      |
+| `devsurface configs`               | List config files and validate the JSON ones.                           |
+| `devsurface bloat`                 | Large files, Git LFS candidates, and build output committed by mistake. |
+| `devsurface links`                 | Verify every relative link in the Markdown docs resolves.               |
+| `devsurface ci`                    | Explain CI pipelines and check they match the local scripts.            |
+| `devsurface standup`               | Your recent commits grouped by day, plus work in progress (`--mine`).   |
+| `devsurface release-notes`         | Draft release notes from commits since the last tag.                    |
+| `devsurface readme`                | Grade the README and suggest what to add.                               |
+| `devsurface env usage`             | Where each env variable is read, plus unused/undocumented keys.         |
+| `devsurface watch`                 | Live terminal status: ports, services, health, every 5 seconds.         |
+| `devsurface doctor --fix`          | Apply every safe automatic fix, then re-run the checkup.                |
+| `devsurface completions <shell>`   | Tab-completion script for bash, zsh, or PowerShell.                     |
+| `devsurface history`               | Show recent script runs recorded by the dashboard (`--json`).           |
+| `devsurface badge`                 | Generate a setup-readiness SVG badge for the README.                    |
+| `devsurface ports --free <port>`   | Stop the process occupying a port (with safety guardrails).             |
+| `devsurface env check`             | Report missing/empty env keys; exits nonzero for CI (`--json`).         |
+| `devsurface env sync`              | Append keys from `.env.example` missing in `.env` (never overwrites).   |
+| `devsurface info`                  | Show version, data locations, and workspace count.                      |
+| `devsurface status`                | Check whether a local hub is running (version, uptime, workspaces).     |
+| `devsurface init`                  | Create a starter `devsurface.config.json`.                              |
+| `devsurface passport`              | Generate a shareable HTML onboarding report (Project Passport).         |
+| `devsurface run [script]`          | Run a package script (interactive picker when omitted).                 |
+| `devsurface up`                    | Run the launch sequence: Docker services, then the dev script.          |
+| `devsurface upgrade`               | Check the npm registry for a newer DevSurface release.                  |
+| `devsurface serve`                 | Start the multi-workspace hub server.                                   |
+| `devsurface workspace add [path]`  | Register a project directory with the local hub.                        |
+| `devsurface workspace list`        | List registered hub workspaces.                                         |
+| `devsurface workspace remove <id>` | Remove a workspace from the hub registry.                               |
+| `devsurface workspace prune`       | Remove workspaces whose directories no longer exist.                    |
 
 ## Project Passport
 

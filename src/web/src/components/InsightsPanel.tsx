@@ -4,7 +4,75 @@ import { renderMarkdownSafe } from '@core/markdown/index.js';
 import { formatBytes } from '@core/stats/index.js';
 import { apiPrefix } from '../mutation';
 
-type InsightsTab = 'todos' | 'stats' | 'deps' | 'git' | 'docs';
+type InsightsTab =
+  | 'scorecard'
+  | 'todos'
+  | 'stats'
+  | 'deps'
+  | 'depsHealth'
+  | 'secrets'
+  | 'tests'
+  | 'activity'
+  | 'git'
+  | 'docs';
+
+interface Scorecard {
+  score: number;
+  grade: string;
+  categories: Array<{ id: string; label: string; score: number; weight: number; verdict: string }>;
+  topSuggestions: string[];
+}
+
+interface SecretReport {
+  findings: Array<{
+    kind: string;
+    severity: string;
+    file: string;
+    line: number;
+    preview: string;
+    advice: string;
+  }>;
+  scannedFiles: number;
+  clean: boolean;
+  truncated: boolean;
+}
+
+interface TestInsights {
+  files: Array<{ file: string; tests: number; skipped: number; focused: number; todo: number }>;
+  totals: {
+    files: number;
+    tests: number;
+    suites: number;
+    skipped: number;
+    focused: number;
+    todo: number;
+  };
+  focusedFiles: string[];
+  untestedSources: string[];
+  truncated: boolean;
+}
+
+interface ActivityReport {
+  available: boolean;
+  recentCommits: number;
+  windowDays: number;
+  byWeekday: number[];
+  byHour: number[];
+  churn: Array<{ file: string; commits: number }>;
+  repoAgeDays: number | null;
+  longestStreak: number;
+  currentStreak: number;
+  busiestWeekday: string | null;
+}
+
+interface DepsHealthReport {
+  heaviest: Array<{ name: string; bytes: number }>;
+  duplicates: Array<{ name: string; versions: string[] }>;
+  unused: string[];
+  phantom: string[];
+  nodeModulesBytes: number | null;
+  installedPackageCount: number;
+}
 
 interface TodoReport {
   items: Array<{ marker: string; text: string; file: string; line: number }>;
@@ -95,12 +163,27 @@ function relativeDay(isoDate: string): string {
 }
 
 const TAB_LABELS: Record<InsightsTab, string> = {
+  scorecard: 'Scorecard',
   todos: 'To-dos in code',
   stats: 'Code size',
   deps: 'Dependencies',
+  depsHealth: 'Dependency health',
+  secrets: 'Secret scan',
+  tests: 'Tests',
+  activity: 'Activity',
   git: 'History',
   docs: 'Docs'
 };
+
+const WEEKDAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function gradeColor(score: number): string {
+  return score >= 80
+    ? 'var(--good, #16a34a)'
+    : score >= 55
+      ? 'var(--warn, #d97706)'
+      : 'var(--bad, #dc2626)';
+}
 
 /** Deep project insights: TODO comments, code stats, dependencies, git history, and docs. */
 export function InsightsPanel({ workspaceId }: { workspaceId: string | null }) {
@@ -115,6 +198,11 @@ export function InsightsPanel({ workspaceId }: { workspaceId: string | null }) {
   const deps = useFetch<DependencyReport>(`${prefix}/deps`, tab === 'deps');
   const git = useFetch<GitInsights>(`${prefix}/git/insights`, tab === 'git');
   const docs = useFetch<DocEntry[]>(`${prefix}/docs`, tab === 'docs');
+  const scorecard = useFetch<Scorecard>(`${prefix}/scorecard`, tab === 'scorecard');
+  const secrets = useFetch<SecretReport>(`${prefix}/secrets`, tab === 'secrets');
+  const tests = useFetch<TestInsights>(`${prefix}/tests`, tab === 'tests');
+  const activity = useFetch<ActivityReport>(`${prefix}/activity`, tab === 'activity');
+  const depsHealth = useFetch<DepsHealthReport>(`${prefix}/deps/health`, tab === 'depsHealth');
 
   useEffect(() => {
     if (openDoc === null) {
@@ -170,6 +258,243 @@ export function InsightsPanel({ workspaceId }: { workspaceId: string | null }) {
           </button>
         ))}
       </div>
+
+      {tab === 'scorecard' ? (
+        <div className="learn-card">
+          <h2>Project scorecard</h2>
+          <p className="learn-muted">
+            One overall health grade, built from documentation, tests, secret hygiene, dependencies,
+            links, and version control.
+          </p>
+          {scorecard.error ? <p>Could not build the scorecard.</p> : null}
+          {scorecard.data !== null ? (
+            <>
+              <p className="learn-summary" style={{ color: gradeColor(scorecard.data.score) }}>
+                Grade {scorecard.data.grade} · {scorecard.data.score}/100
+              </p>
+              <div className="stats-bars">
+                {scorecard.data.categories.map((category) => (
+                  <div className="stats-bar-row" key={category.id} title={category.verdict}>
+                    <span className="stats-language">{category.label}</span>
+                    <span className="stats-bar">
+                      <i
+                        style={{
+                          width: `${Math.max(2, category.score)}%`,
+                          background: gradeColor(category.score)
+                        }}
+                      />
+                    </span>
+                    <span className="stats-lines">{category.score}/100</span>
+                  </div>
+                ))}
+              </div>
+              {scorecard.data.topSuggestions.length > 0 ? (
+                <>
+                  <h3>Biggest opportunities</h3>
+                  <ul className="plain-list">
+                    {scorecard.data.topSuggestions.map((suggestion, index) => (
+                      <li key={index}>{safeDisplayText(suggestion)}</li>
+                    ))}
+                  </ul>
+                </>
+              ) : null}
+            </>
+          ) : !scorecard.error ? (
+            <p className="learn-muted">Grading…</p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {tab === 'secrets' ? (
+        <div className="learn-card">
+          <h2>Secret scan</h2>
+          <p className="learn-muted">
+            Looks for credentials accidentally written into source files. Values are always
+            redacted, and <code>.env</code> files are never scanned.
+          </p>
+          {secrets.error ? <p>Could not scan for secrets.</p> : null}
+          {secrets.data !== null ? (
+            secrets.data.clean ? (
+              <p>No hardcoded secrets found across {secrets.data.scannedFiles} files. ✨</p>
+            ) : (
+              <ul className="todo-list">
+                {secrets.data.findings.map((finding, index) => (
+                  <li key={index}>
+                    <span
+                      className="todo-marker"
+                      style={{
+                        background: finding.severity === 'critical' ? '#dc2626' : '#d97706'
+                      }}
+                    >
+                      {finding.severity === 'critical' ? 'CRITICAL' : 'warning'}
+                    </span>
+                    <span className="todo-text">
+                      <strong>{safeDisplayText(finding.kind)}</strong> —{' '}
+                      {safeDisplayText(finding.advice)}
+                    </span>
+                    <code className="todo-file">
+                      {safeDisplayText(finding.file)}:{finding.line}
+                    </code>
+                  </li>
+                ))}
+              </ul>
+            )
+          ) : !secrets.error ? (
+            <p className="learn-muted">Scanning…</p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {tab === 'tests' ? (
+        <div className="learn-card">
+          <h2>Test suite at a glance</h2>
+          {tests.error ? <p>Could not read the tests.</p> : null}
+          {tests.data !== null ? (
+            tests.data.totals.files === 0 ? (
+              <p>No test files found.</p>
+            ) : (
+              <>
+                <p className="learn-summary">
+                  {tests.data.totals.tests} tests across {tests.data.totals.files} files
+                  {tests.data.totals.skipped > 0 ? ` · ${tests.data.totals.skipped} skipped` : ''}
+                  {tests.data.totals.todo > 0 ? ` · ${tests.data.totals.todo} todo` : ''}
+                </p>
+                {tests.data.focusedFiles.length > 0 ? (
+                  <p className="learn-error-text">
+                    ⚠ {tests.data.totals.focused} focused test(s) with <code>.only</code> — CI may
+                    be running only these: {tests.data.focusedFiles.map(safeDisplayText).join(', ')}
+                  </p>
+                ) : null}
+                {tests.data.untestedSources.length > 0 ? (
+                  <>
+                    <h3>Source files with no matching test</h3>
+                    <ul className="plain-list">
+                      {tests.data.untestedSources.slice(0, 12).map((file) => (
+                        <li key={file}>
+                          <code>{safeDisplayText(file)}</code>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ) : null}
+              </>
+            )
+          ) : !tests.error ? (
+            <p className="learn-muted">Reading tests…</p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {tab === 'activity' ? (
+        <div className="learn-card">
+          <h2>When this project gets worked on</h2>
+          {activity.error ? <p>Could not read git activity.</p> : null}
+          {activity.data !== null ? (
+            !activity.data.available ? (
+              <p>This folder is not a git repository (or git is not installed).</p>
+            ) : (
+              <>
+                <p className="learn-summary">
+                  {activity.data.recentCommits} commits in the last {activity.data.windowDays} days
+                  {activity.data.busiestWeekday !== null
+                    ? ` · busiest on ${activity.data.busiestWeekday}`
+                    : ''}
+                </p>
+                <p className="learn-muted">
+                  Current streak {activity.data.currentStreak} day(s) · longest{' '}
+                  {activity.data.longestStreak} day(s)
+                  {activity.data.repoAgeDays !== null
+                    ? ` · repo is ${activity.data.repoAgeDays} days old`
+                    : ''}
+                </p>
+                <div className="stats-bars">
+                  {activity.data.byWeekday.map((count, index) => {
+                    const top = Math.max(...(activity.data?.byWeekday ?? [1]), 1);
+                    return (
+                      <div className="stats-bar-row" key={index}>
+                        <span className="stats-language">{WEEKDAY_ABBR[index]}</span>
+                        <span className="stats-bar">
+                          <i style={{ width: `${Math.max(2, (count / top) * 100)}%` }} />
+                        </span>
+                        <span className="stats-lines">{count}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                {activity.data.churn.length > 0 ? (
+                  <>
+                    <h3>Most-changed files</h3>
+                    <ul className="plain-list">
+                      {activity.data.churn.slice(0, 8).map((entry) => (
+                        <li key={entry.file}>
+                          <code>{safeDisplayText(entry.file)}</code>{' '}
+                          <span className="learn-muted">{entry.commits}×</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ) : null}
+              </>
+            )
+          ) : !activity.error ? (
+            <p className="learn-muted">Reading history…</p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {tab === 'depsHealth' ? (
+        <div className="learn-card">
+          <h2>Dependency health</h2>
+          <p className="learn-muted">
+            Computed straight from <code>node_modules</code> — no registry calls.
+          </p>
+          {depsHealth.error ? <p>Could not analyze dependencies.</p> : null}
+          {depsHealth.data !== null ? (
+            <>
+              <p className="learn-summary">
+                {depsHealth.data.installedPackageCount} packages installed
+                {depsHealth.data.nodeModulesBytes !== null
+                  ? ` · ${formatBytes(depsHealth.data.nodeModulesBytes)} on disk`
+                  : ''}
+              </p>
+              <h3>Heaviest packages</h3>
+              <ul className="plain-list">
+                {depsHealth.data.heaviest.slice(0, 8).map((pkg) => (
+                  <li key={pkg.name}>
+                    <code>{safeDisplayText(pkg.name)}</code>{' '}
+                    <span className="learn-muted">{formatBytes(pkg.bytes)}</span>
+                  </li>
+                ))}
+              </ul>
+              {depsHealth.data.duplicates.length > 0 ? (
+                <>
+                  <h3>Installed at multiple versions</h3>
+                  <ul className="plain-list">
+                    {depsHealth.data.duplicates.slice(0, 8).map((dup) => (
+                      <li key={dup.name}>
+                        <code>{safeDisplayText(dup.name)}</code>{' '}
+                        <span className="learn-muted">{dup.versions.join(', ')}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : null}
+              {depsHealth.data.phantom.length > 0 ? (
+                <p className="learn-error-text">
+                  Imported but not declared: {depsHealth.data.phantom.join(', ')}
+                </p>
+              ) : null}
+              {depsHealth.data.unused.length > 0 ? (
+                <p className="learn-muted">
+                  Declared but never imported: {depsHealth.data.unused.slice(0, 12).join(', ')}
+                </p>
+              ) : null}
+            </>
+          ) : !depsHealth.error ? (
+            <p className="learn-muted">Reading node_modules…</p>
+          ) : null}
+        </div>
+      ) : null}
 
       {tab === 'todos' ? (
         <div className="learn-card">
